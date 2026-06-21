@@ -30,7 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - name: Configure (and auto-enable) GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Auto-enables Pages on the repo if it isn't enabled yet, so the
+          # deploy no longer fails with "Get Pages site failed / Not Found".
+          enablement: true
       - name: Upload web/ as the Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

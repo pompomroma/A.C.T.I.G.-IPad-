@@ -26,12 +26,19 @@ It implements all the same features as the native app, using on-device web tech:
 - Safari (for installing to the Home Screen). Camera + microphone permission.
 
 ## Install on your iPhone/iPad (the "download")
-1. **Get an HTTPS URL** for the `web/` folder. Easiest: this repo ships a GitHub
-   Pages workflow — in **Settings → Pages → Source: GitHub Actions**, then push
-   (or run the "Deploy A.C.T.I.G. PWA" action). The job prints your site URL,
-   e.g. `https://pompomroma.github.io/a.c.t.i.g.-ipad-/`.
+1. **Get an HTTPS URL** for the `web/` folder. This repo ships a GitHub Pages
+   workflow that **auto-enables Pages for you** (`enablement: true`) — just open
+   the **Actions** tab and run **"Deploy A.C.T.I.G. PWA"** (or push a change under
+   `web/`). The job prints your site URL in its summary, e.g.
+   `https://pompomroma.github.io/a.c.t.i.g.-ipad-/`.
    *(HTTPS is mandatory: camera, mic, WebGPU and offline install all require a
    secure context.)*
+
+   > If the deploy ever fails with a **"github-pages environment / branch not
+   > allowed"** protection error, either run the workflow from the default
+   > branch (`main`) or, in **Settings → Environments → github-pages**, allow
+   > this branch. The earlier *"Get Pages site failed / Not Found"* error is
+   > already handled by the auto-enable step.
 2. On the device, **open that URL in Safari**.
 3. Tap **Share → Add to Home Screen**. A.C.T.I.G. now has a real app icon and
    launches full-screen.

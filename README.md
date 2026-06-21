@@ -1,13 +1,26 @@
 # A.C.T.I.G. — Offline On-Device AI Assistant for iPad & iPhone
 
 A Jarvis-style, fully **offline** AI assistant that runs **directly on your iPad
-Pro 13" (M4)** *and on iPhone*. It's a **universal app**: every function works on
-both, with layouts that adapt to each screen and orientation. Built as a Swift
-Playgrounds app so you can download, build and run it **on the device itself — no
-Mac required**.
+Pro 13" (M4)** *and on iPhone*. Every function works on both, with layouts that
+adapt to each screen and orientation. It ships in **two forms** so it can run on
+any device with **no Mac required** — a Web App (PWA) for iPhone + iPad, and a
+native Swift app for iPad.
 
 On activation it greets you — by voice and text:
 > **"Welcome sir, ACTIG at your service sir, how may I assist you sir."**
+
+## Two ways to run it
+
+| Build | Best for | How to install |
+|---|---|---|
+| **Web App / PWA** → [`web/`](web/README.md) | **iPhone *and* iPad** (and Android/desktop) | Open the HTTPS URL in Safari → **Add to Home Screen**. No Mac, no App Store. |
+| **Native Swift app** → [`ACTIG.swiftpm/`](ACTIG.swiftpm) | iPad (and Mac) only | Open in **Swift Playgrounds** and Run. *(Swift Playgrounds is not available on iPhone — use the PWA there.)* |
+
+Both deliver the same features and run fully offline. **iPhone users: use the
+PWA** — see [`web/README.md`](web/README.md) for the step-by-step install.
+
+---
+## Native Swift app (iPad / Mac)
 
 > **Read this first:** Some things you might expect from a "take over the whole
 > device" assistant are **not possible on a normal iPad** — Apple's sandbox
@@ -44,14 +57,12 @@ On activation it greets you — by voice and text:
 
 ---
 
-## Download, install & run on iPad or iPhone (no Mac)
+## Download, install & run on iPad (Swift Playgrounds)
 
-Swift Playgrounds runs on both iPadOS and iOS, so the same steps work on either
-device. (iPhone screens are smaller, so the hologram panel spans the width and
-the 3D toolbar scrolls — every control is still there.)
+> **iPhone?** Swift Playgrounds is **iPad/Mac only** — install the **[Web App
+> (PWA)](web/README.md)** on iPhone instead. The steps below are for iPad.
 
-1. **Install Swift Playgrounds** (4.5 or later) from the App Store — it's free
-   (available on both iPad and iPhone).
+1. **Install Swift Playgrounds** (4.5 or later) from the App Store — it's free.
 2. **Get the project onto the device.** Either:
    - Clone/download this repo and AirDrop the `ACTIG.swiftpm` folder to the
      device, then tap it — it opens straight in Swift Playgrounds; **or**

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ACTIG" />
+  <meta name="theme-color" content="#06101a" />
+  <title>A.C.T.I.G.</title>
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="stylesheet" href="css/holo.css" />
+
+  <!-- Bare-specifier -> CDN ESM mapping. Cached by the service worker after the
+       first online load so the app runs offline thereafter. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://esm.run/three@0.160.1",
+      "@mlc-ai/web-llm": "https://esm.run/@mlc-ai/web-llm@0.2.79",
+      "@huggingface/transformers": "https://esm.run/@huggingface/transformers@3.5.1",
+      "@mediapipe/tasks-vision": "https://esm.run/@mediapipe/tasks-vision@0.10.18"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- Workspaces (behind the hologram overlay), as independent stacked layers -->
+  <div id="backdrop" class="backdrop"></div>
+  <video id="camera-video" class="camera-video hidden" playsinline muted></video>
+  <canvas id="scene-canvas" class="workspace hidden"></canvas>
+  <canvas id="hand-overlay" class="overlay-canvas hidden"></canvas>
+
+  <div id="camera-workspace" class="workspace hidden">
+    <div id="reticle" class="reticle"></div>
+    <button id="scan-btn" class="scan-btn">◎ Scan object</button>
+  </div>
+
+  <!-- 3D toolbar (only visible in scene mode) -->
+  <div id="scene-toolbar" class="scene-toolbar hidden">
+    <button data-tool="box">▣ Box</button>
+    <button data-tool="sphere">◯ Sphere</button>
+    <button data-tool="cylinder">⬭ Cyl</button>
+    <button data-tool="cone">▲ Cone</button>
+    <span class="sep"></span>
+    <button data-tool="grow">＋ Grow</button>
+    <button data-tool="shrink">－ Shrink</button>
+    <button data-tool="delete">🗑 Del</button>
+    <span class="sep"></span>
+    <button data-tool="undo">↶ Undo</button>
+    <button data-tool="redo">↷ Redo</button>
+  </div>
+
+  <!-- Jarvis hologram overlay -->
+  <div id="overlay" class="overlay dormant">
+    <div id="panel" class="panel">
+      <div class="panel-head">
+        <div id="core" class="core"><span></span><span></span><span></span><b></b></div>
+        <div class="titles">
+          <div class="title">A.C.T.I.G.</div>
+          <div id="status" class="status">dormant</div>
+        </div>
+        <div class="switcher">
+          <button data-ws="conversation" class="ws active">💬</button>
+          <button data-ws="scene3D" class="ws">🧊</button>
+          <button data-ws="camera" class="ws">🎯</button>
+        </div>
+      </div>
+
+      <div id="transcript" class="transcript"></div>
+
+      <div class="input-row">
+        <label class="attach">📎<input id="file-input" type="file" accept="image/*" hidden /></label>
+        <input id="text-input" class="text-input" type="text" placeholder="Command A.C.T.I.G.…" />
+        <button id="send-btn" class="send">▲</button>
+      </div>
+    </div>
+
+    <div class="mic-row">
+      <button id="mic-user" class="mic"><span class="ic">🎙</span><small>You</small></button>
+      <button id="mic-ai" class="mic"><span class="ic">🔊</span><small>ACTIG</small></button>
+    </div>
+
+    <button id="wake-badge" class="wake-badge">
+      <div class="core small"><span></span><span></span><span></span><b></b></div>
+      <div><div class="title">A.C.T.I.G.</div><small>tap or say “wake up ACTIG”</small></div>
+    </button>
+  </div>
+
+  <div id="boot" class="boot">Initializing A.C.T.I.G.…</div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+    }
+  </script>
+</body>
+</html>

@@ -1,8 +1,13 @@
-# A.C.T.I.G. — Offline On-Device AI Assistant for iPad Pro (M4)
+# A.C.T.I.G. — Offline On-Device AI Assistant for iPad & iPhone
 
 A Jarvis-style, fully **offline** AI assistant that runs **directly on your iPad
-Pro 13" (M4)**. Built as a Swift Playgrounds app so you can download, build and
-run it **on the iPad itself — no Mac required**.
+Pro 13" (M4)** *and on iPhone*. It's a **universal app**: every function works on
+both, with layouts that adapt to each screen and orientation. Built as a Swift
+Playgrounds app so you can download, build and run it **on the device itself — no
+Mac required**.
+
+On activation it greets you — by voice and text:
+> **"Welcome sir, ACTIG at your service sir, how may I assist you sir."**
 
 > **Read this first:** Some things you might expect from a "take over the whole
 > device" assistant are **not possible on a normal iPad** — Apple's sandbox
@@ -39,12 +44,17 @@ run it **on the iPad itself — no Mac required**.
 
 ---
 
-## Download, install & run on the iPad (no Mac)
+## Download, install & run on iPad or iPhone (no Mac)
 
-1. **Install Swift Playgrounds** (4.5 or later) from the App Store — it's free.
-2. **Get the project onto the iPad.** Either:
-   - Clone/download this repo and AirDrop the `ACTIG.swiftpm` folder to the iPad,
-     then tap it — it opens straight in Swift Playgrounds; **or**
+Swift Playgrounds runs on both iPadOS and iOS, so the same steps work on either
+device. (iPhone screens are smaller, so the hologram panel spans the width and
+the 3D toolbar scrolls — every control is still there.)
+
+1. **Install Swift Playgrounds** (4.5 or later) from the App Store — it's free
+   (available on both iPad and iPhone).
+2. **Get the project onto the device.** Either:
+   - Clone/download this repo and AirDrop the `ACTIG.swiftpm` folder to the
+     device, then tap it — it opens straight in Swift Playgrounds; **or**
    - In Swift Playgrounds tap **＋ → App**, then recreate the files from this repo.
 3. **Open `ACTIG.swiftpm`** in Swift Playgrounds.
 4. Tap **▶ Run**. On first launch, grant **Microphone**, **Speech Recognition**

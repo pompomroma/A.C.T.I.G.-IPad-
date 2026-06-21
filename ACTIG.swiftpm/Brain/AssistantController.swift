@@ -124,12 +124,24 @@ final class AssistantController: ObservableObject {
         try? speech.start()
     }
 
+    /// Spoken on every activation, shown as a proper assistant message too.
+    static let welcomeGreeting = "Welcome sir, ACTIG at your service sir, how may I assist you sir."
+
     func wake() async {
         guard state.mode == .dormant else { return }
         withAnimation(.spring) { state.mode = .awake }
         state.workspace = .conversation
         state.statusLine = "online · listening"
-        speak("A.C.T.I.G. online.")
+        announce(AssistantController.welcomeGreeting)
+    }
+
+    /// Emits text as an A.C.T.I.G. chat bubble *and* speaks it aloud (unless the
+    /// AI voice is muted). Used for the welcome greeting and other proactive lines.
+    private func announce(_ text: String) {
+        state.messages.append(ChatMessage(role: .assistant, text: text))
+        Conversation.save(state.messages)
+        guard !state.aiVoiceMuted else { return }
+        voice.speak(text)
     }
 
     func shutdown() {

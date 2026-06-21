@@ -13,11 +13,17 @@ struct ObjectAnalysisView: View {
             CameraPreview(session: assistant.cameraSession.session)
                 .ignoresSafeArea()
 
-            // Scanning reticle.
-            RoundedRectangle(cornerRadius: 28)
-                .stroke(HoloTheme.primary.opacity(0.8), style: StrokeStyle(lineWidth: 2, dash: [10, 6]))
-                .frame(width: 320, height: 320)
-                .shadow(color: HoloTheme.primary, radius: 8)
+            // Scanning reticle — sized relative to the screen so it fits both
+            // iPad and iPhone (and either orientation).
+            GeometryReader { geo in
+                let side = min(geo.size.width, geo.size.height) * 0.7
+                RoundedRectangle(cornerRadius: 28)
+                    .stroke(HoloTheme.primary.opacity(0.8), style: StrokeStyle(lineWidth: 2, dash: [10, 6]))
+                    .frame(width: side, height: side)
+                    .shadow(color: HoloTheme.primary, radius: 8)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            .allowsHitTesting(false)
 
             if state.cameraControlEnabled {
                 HandIndicator()
@@ -74,10 +80,34 @@ struct CameraPreview: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        uiView.applyOrientation()
+    }
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var videoPreviewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            applyOrientation()
+        }
+
+        /// Keep the preview upright on iPhone/iPad in any orientation.
+        func applyOrientation() {
+            guard let connection = videoPreviewLayer.connection else { return }
+            let orientation = window?.windowScene?.interfaceOrientation ?? .portrait
+            let angle: CGFloat
+            switch orientation {
+            case .portrait: angle = 90
+            case .portraitUpsideDown: angle = 270
+            case .landscapeLeft: angle = 180
+            case .landscapeRight: angle = 0
+            default: angle = 90
+            }
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        }
     }
 }

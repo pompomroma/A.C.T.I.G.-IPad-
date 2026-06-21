@@ -32,11 +32,15 @@ let package = Package(
             bundleVersion: "1",
             appIcon: .placeholder(icon: .sparkles),
             accentColor: .presetColor(.cyan),
-            supportedDeviceFamilies: [.pad],
+            supportedDeviceFamilies: [
+                .pad,
+                .phone
+            ],
             supportedInterfaceOrientations: [
+                .portrait,
                 .landscapeRight,
                 .landscapeLeft,
-                .portrait
+                .portraitUpsideDown(.when(deviceFamilies: [.pad]))
             ],
             capabilities: [
                 .microphone(purposeString: "A.C.T.I.G. listens for your voice commands and wake word, fully on-device."),

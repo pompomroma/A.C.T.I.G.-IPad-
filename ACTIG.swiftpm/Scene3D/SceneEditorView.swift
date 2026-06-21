@@ -46,7 +46,17 @@ struct SceneEditorView: View {
         }
     }
 
+    /// On iPad the toolbar fits naturally; on a narrow iPhone it becomes
+    /// horizontally scrollable so every tool stays reachable.
     private var bottomToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            toolbarStack
+            ScrollView(.horizontal, showsIndicators: false) { toolbarStack }
+        }
+        .background(HoloTheme.panel(RoundedRectangle(cornerRadius: 20, style: .continuous)))
+    }
+
+    private var toolbarStack: some View {
         HStack(spacing: 14) {
             toolButton("plus.square", "Box") { store.addShape(.box) }
             toolButton("circle", "Sphere") { store.addShape(.sphere) }
@@ -65,7 +75,6 @@ struct SceneEditorView: View {
             toolButton("arrow.uturn.forward", "Redo", enabled: store.canRedo) { store.redo() }
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(HoloTheme.panel(RoundedRectangle(cornerRadius: 20, style: .continuous)))
     }
 
     private func toolButton(_ icon: String, _ label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {

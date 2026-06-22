@@ -109,6 +109,15 @@ python3 -m http.server 8000
 For on-device testing you still need the HTTPS URL (step 1).
 
 ## Notes & fallbacks
+- **"A problem repeatedly occurred" / the page keeps reloading:** that's Safari
+  running out of memory while loading the conversation model. A.C.T.I.G. now
+  picks a **small model on phones** (0.5B) vs a larger one on iPad/desktop, and a
+  **crash-loop breaker** switches to lite mode after two reloads so the page
+  stabilises. To retry the full model later, wait ~30 min (it auto-resets) or
+  clear the site data. For the richest conversation, run it on an **iPad or a
+  WebGPU desktop**, which have far more memory headroom.
+- **Conversation vs commands:** with the model loaded it holds normal everyday
+  conversation; in lite mode (no model) it still does commands + basic chat.
 - **No WebGPU?** The LLM falls back to a stub so the UI/voice/3D/camera all still
   work; enable WebGPU (iOS 18+) for real reasoning.
 - **First load is heavy** (model weights + Whisper + MediaPipe). They're cached by

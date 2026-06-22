@@ -27,15 +27,20 @@ function extractCount(t){
   return m ? parseInt(m[0],10) : null;
 }
 
-export function parse(raw){
+// `ctx.workspace` lets ambiguous editing words ("delete", "go back", a bare
+// "a ball") count as 3D commands ONLY while the 3D space is open. Everywhere
+// else they fall through to natural conversation, so chatting feels human.
+export function parse(raw, ctx = {}){
   const t = (raw || '').toLowerCase().trim();
+  const inScene = ctx.workspace === 'scene3D';
 
+  // Always-global, unambiguous commands.
   if (has(t,'wake up actig','wake up act','wakeup actig')) return { type:'wake' };
   if (has(t,'shut down all systems','shutdown all systems')) return { type:'shutdown' };
 
-  if (has(t,'3d project','3d space','modeling','modelling','bring up the project','open the project'))
+  if (has(t,'3d project','3d space','modeling','modelling','bring up the project','open the project','open the 3d','open 3d'))
     return { type:'openScene' };
-  if (has(t,'go back to chat','close project','conversation')) return { type:'openConversation' };
+  if (has(t,'go back to chat','close project','close the project','exit 3d')) return { type:'openConversation' };
 
   if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','use my fingers'))
     return { type:'enableCameraControl' };
@@ -46,25 +51,38 @@ export function parse(raw){
   if (has(t,'scan this','what is this','analyze this','analyse this','identify this','what am i holding'))
     return { type:'analyze', question: raw };
 
-  if (has(t,'undo','go back','previous action','revert')) return { type:'undo' };
-  if (has(t,'redo','do it again')) return { type:'redo' };
+  // "undo"/"redo" as explicit words are safe anywhere; the looser synonyms only
+  // apply inside the 3D space.
+  if (/\bundo\b/.test(t)) return { type:'undo' };
+  if (/\bredo\b/.test(t)) return { type:'redo' };
+  if (inScene && has(t,'go back','previous action','revert')) return { type:'undo' };
+  if (inScene && has(t,'do it again')) return { type:'redo' };
 
-  const scene = parseScene(t);
+  const scene = parseScene(t, inScene);
   if (scene) return scene;
 
   return { type:'chat', text: raw };
 }
 
-function parseScene(t){
+const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put','build'];
+
+function parseScene(t, inScene){
   const kind = detectShape(t);
   if (!kind){
+    // Selection edits only make sense while editing the 3D scene.
+    if (!inScene) return null;
     if (has(t,'bigger','grow','extend','enlarge','scale up')) return { type:'scene', action:'grow' };
     if (has(t,'smaller','shrink','scale down')) return { type:'scene', action:'shrink' };
-    if (has(t,'delete','remove')) return { type:'scene', action:'delete' };
+    if (has(t,'delete','remove it','delete it')) return { type:'scene', action:'delete' };
     if (has(t,'swap','switch places')) return { type:'scene', action:'swap' };
     if (has(t,'clear the scene','clear scene','remove everything','start over')) return { type:'scene', action:'clear' };
     return null;
   }
+  // A shape word only triggers creation with an explicit verb, OR when already in
+  // the 3D space — so "I had a ball yesterday" stays a normal sentence.
+  const explicit = has(t, ...ADD_VERBS);
+  if (!explicit && !inScene) return null;
+
   const n = extractCount(t);
   if (n && has(t,'multiply','copies','duplicate','times')) return { type:'scene', action:'multiply', kind, count:n };
   return { type:'scene', action:'add', kind };

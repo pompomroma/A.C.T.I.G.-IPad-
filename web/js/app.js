@@ -52,13 +52,14 @@ function boot(){
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
-// this is what an iOS Shortcut/Siri uses to bring up the 3D space "from anywhere".
+// this is what an iOS Siri Shortcut uses to open A.C.T.I.G. by voice and bring it
+// straight online (or into the 3D space) "from anywhere", without tapping the icon.
 function handleDeepLink(){
   const h = (location.hash + ' ' + location.search).toLowerCase();
   if (!h.trim()) return;
   if (/scene|3d/.test(h)){ wake(); setWorkspace('scene3D'); }
   else if (/camera|scan/.test(h)){ wake(); setWorkspace('camera'); }
-  else if (/wake/.test(h)){ wake(); }
+  else if (/wake|actig|launch|open|hey/.test(h)){ wake(); }
 }
 
 // ---------- UI wiring ----------

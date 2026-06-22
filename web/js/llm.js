@@ -16,17 +16,28 @@ const SYSTEM_PROMPT =
   'workspace, enable camera hand controls, and analyse objects shown to the ' +
   'camera. You run on-device and never claim access to other apps\' private data.';
 
-// Pick a model sized to the device's memory. iPhones have a tight per-tab memory
-// budget in Safari, so a 1.5B model commonly OOM-crashes the page (the "A problem
-// repeatedly occurred" reload loop). Use a small q4f32 model on phones (no
-// shader-f16 requirement, much lower memory) and a larger one on iPad/desktop.
-function pickModel(){
+// AUTO model-size selector. Inspects the real WebGPU adapter (memory tier +
+// shader-f16 support) and the reported device memory, then picks the largest
+// model the device can safely run. It is deliberately conservative on Safari
+// (which doesn't expose navigator.deviceMemory): iOS devices — including the 4 GB
+// 10th-gen iPad — get the small model so they don't OOM-crash, while roomy
+// desktops/Android get the larger one. f16 variants are chosen when the GPU
+// supports shader-f16 (smaller + faster), else f32 variants for compatibility.
+async function chooseModel(){
+  let f16 = false, maxBuf = 0;
+  try{
+    const adapter = await navigator.gpu.requestAdapter();
+    f16 = !!(adapter && adapter.features && adapter.features.has('shader-f16'));
+    maxBuf = (adapter && adapter.limits && adapter.limits.maxStorageBufferBindingSize) || 0;
+  }catch{}
+
   const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
-  const minSide = (typeof screen !== 'undefined') ? Math.min(screen.width, screen.height) : 0;
-  const roomy = mem >= 8 || minSide >= 768;   // iPad / desktop
-  return roomy
-    ? 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC'
-    : 'Qwen2.5-0.5B-Instruct-q4f32_1-MLC';
+  // "Roomy" only when the platform actually reports lots of RAM (desktops,
+  // some Android) OR the GPU advertises a very large storage buffer (>= 1 GiB).
+  const roomy = mem >= 8 || maxBuf >= (1 << 30);
+
+  if (roomy) return f16 ? 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC' : 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC';
+  return f16 ? 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC' : 'Qwen2.5-0.5B-Instruct-q4f32_1-MLC';
 }
 
 // Crash-loop breaker: if loading the model crashed the tab (Safari OOM) two times
@@ -89,7 +100,7 @@ export class Brain {
     // survives; a clean success or a caught error resets it below.
     try{ localStorage.setItem(FAIL_KEY, String(fails + 1)); localStorage.setItem(FAIL_TS, String(now)); }catch{}
 
-    const modelId = pickModel();
+    const modelId = await chooseModel();
     try{
       const webllm = await this._withTimeout(import('@mlc-ai/web-llm'), 30000, 'web-llm import timed out');
       this.engine = await this._withTimeout(

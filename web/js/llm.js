@@ -28,6 +28,13 @@ export class Brain {
 
   static webgpuAvailable(){ return typeof navigator !== 'undefined' && 'gpu' in navigator; }
 
+  _withTimeout(promise, ms, label){
+    return Promise.race([
+      promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(label || 'timed out')), ms)),
+    ]);
+  }
+
   async load(onProgress){
     if (!Brain.webgpuAvailable()){
       this._useStub('WebGPU unavailable on this browser');
@@ -35,10 +42,14 @@ export class Brain {
       return;
     }
     try{
-      const webllm = await import('@mlc-ai/web-llm');
-      this.engine = await webllm.CreateMLCEngine(MODEL_ID, {
-        initProgressCallback: (r) => onProgress?.(r.progress ?? 0)
-      });
+      // Importing the library should be quick; if the CDN is blocked/slow this
+      // would otherwise hang forever, so cap it and fall back to the stub.
+      const webllm = await this._withTimeout(import('@mlc-ai/web-llm'), 30000, 'web-llm import timed out');
+      // The weight download can be large; allow up to 5 minutes but no longer.
+      this.engine = await this._withTimeout(
+        webllm.CreateMLCEngine(MODEL_ID, { initProgressCallback: (r) => onProgress?.(r.progress ?? 0) }),
+        300000, 'model load timed out'
+      );
       this.ready = true;
       this.displayName = 'WebLLM · Qwen2.5-1.5B';
     }catch(err){

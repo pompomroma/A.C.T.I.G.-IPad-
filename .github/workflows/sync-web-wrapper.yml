@@ -1,0 +1,24 @@
+name: Web wrapper in sync
+
+# Fails if ACTIGWeb.swiftpm/WebApp/ has drifted from web/. Run
+# scripts/sync-web-wrapper.sh locally and commit to fix.
+on:
+  push:
+    paths:
+      - 'web/**'
+      - 'ACTIGWeb.swiftpm/WebApp/**'
+      - 'scripts/sync-web-wrapper.sh'
+      - '.github/workflows/sync-web-wrapper.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'ACTIGWeb.swiftpm/WebApp/**'
+      - 'scripts/sync-web-wrapper.sh'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify wrapper matches web/
+        run: bash scripts/sync-web-wrapper.sh --check

@@ -26,19 +26,30 @@ It implements all the same features as the native app, using on-device web tech:
 - Safari (for installing to the Home Screen). Camera + microphone permission.
 
 ## Install on your iPhone/iPad (the "download")
-1. **Get an HTTPS URL** for the `web/` folder. This repo ships a GitHub Pages
-   workflow that **auto-enables Pages for you** (`enablement: true`) — just open
-   the **Actions** tab and run **"Deploy A.C.T.I.G. PWA"** (or push a change under
-   `web/`). The job prints your site URL in its summary, e.g.
+
+**One-time setup (do this once — only the repo owner can):** GitHub's automatic
+workflow token is *not allowed to turn Pages on*, so you must enable it yourself
+first. This is the cause of the *"Resource not accessible by integration"* /
+*"Get Pages site failed"* errors.
+
+1. In the repo: **Settings → Pages → Build and deployment → Source: "GitHub
+   Actions"**. (This creates the Pages site so the workflow no longer has to.)
+2. *Only if a run still shows "Resource not accessible by integration":*
+   **Settings → Actions → General → Workflow permissions → "Read and write
+   permissions" → Save.**
+
+**Then deploy and install:**
+3. Open the **Actions** tab → **"Deploy A.C.T.I.G. PWA"** → **Run workflow** (or
+   push a change under `web/`). When green, the job summary shows your URL, e.g.
    `https://pompomroma.github.io/a.c.t.i.g.-ipad-/`.
    *(HTTPS is mandatory: camera, mic, WebGPU and offline install all require a
    secure context.)*
+4. On the iPhone, open that URL in **Safari → Share → Add to Home Screen**.
 
-   > If the deploy ever fails with a **"github-pages environment / branch not
-   > allowed"** protection error, either run the workflow from the default
-   > branch (`main`) or, in **Settings → Environments → github-pages**, allow
-   > this branch. The earlier *"Get Pages site failed / Not Found"* error is
-   > already handled by the auto-enable step.
+> Deploying from the **default branch (`main`)** is recommended — the included PR
+> into `main` does this and also avoids the *"github-pages environment / branch
+> not allowed"* protection error. If you ever deploy from a feature branch and hit
+> that, allow the branch under **Settings → Environments → github-pages**.
 2. On the device, **open that URL in Safari**.
 3. Tap **Share → Add to Home Screen**. A.C.T.I.G. now has a real app icon and
    launches full-screen.

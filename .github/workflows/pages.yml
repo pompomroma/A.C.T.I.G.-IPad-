@@ -3,9 +3,12 @@ name: Deploy A.C.T.I.G. PWA to GitHub Pages
 # Publishes the web/ PWA over HTTPS so it can be installed on iPhone/iPad
 # (camera, microphone, WebGPU and offline service workers all require HTTPS).
 #
-# One-time setup: in the repo, go to Settings → Pages → Build and deployment →
-# Source: "GitHub Actions". After that, every push to the default branch (or a
-# manual run) publishes the site and prints its https URL in the job summary.
+# ONE-TIME SETUP (only you can do this — the workflow token cannot enable Pages):
+#   1. Settings → Pages → Build and deployment → Source: "GitHub Actions".
+#   2. If a run shows "Resource not accessible by integration", also set
+#      Settings → Actions → General → Workflow permissions → "Read and write".
+# After that, this workflow deploys on every push to the default branch (or a
+# manual run) and prints the site's https URL in the job summary.
 
 on:
   push:
@@ -30,12 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure (and auto-enable) GitHub Pages
+      - name: Configure GitHub Pages
+        # No `enablement` here: the default token isn't allowed to create a Pages
+        # site (that caused "Resource not accessible by integration"). Enable
+        # Pages once in Settings (see header), then this step just reads config.
         uses: actions/configure-pages@v5
-        with:
-          # Auto-enables Pages on the repo if it isn't enabled yet, so the
-          # deploy no longer fails with "Get Pages site failed / Not Found".
-          enablement: true
       - name: Upload web/ as the Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

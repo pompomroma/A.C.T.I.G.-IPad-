@@ -137,7 +137,7 @@ function sendText(){
 }
 
 async function handleText(text, spoken){
-  const intent = parse(text);
+  const intent = parse(text, { workspace: state.workspace });
   if (intent.type !== 'wake' && intent.type !== 'shutdown') addMessage('user', text);
   clearLive();
   await route(intent);
@@ -183,10 +183,13 @@ async function generateReply(prompt){
   setMode('responding'); setStatus('thinking…');
   // The model loads in the background — wait for it on the first request.
   if (!brain.ready){ setStatus('warming up the model…'); await modelReadyPromise; }
+  // Snapshot recent history BEFORE adding the empty assistant bubble (keeps
+  // context + memory bounded on mobile and avoids sending an empty turn).
+  const history = state.messages.filter(m => m.role !== 'system').slice(-12);
   const bubble = addMessage('assistant', '');
   try{
     let spoke = false;
-    for await (const tok of brain.reply(state.messages.filter(m => m.role !== 'system'))){
+    for await (const tok of brain.reply(history)){
       bubble.el.textContent += tok;
       bubble.content += tok;
       scrollTranscript();

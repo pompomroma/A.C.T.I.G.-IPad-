@@ -14,13 +14,10 @@ On activation it greets you — by voice and text:
 | Build | Best for | How to install |
 |---|---|---|
 | **Web App / PWA** → [`web/`](web/README.md) | **iPhone *and* iPad** (and Android/desktop) | Open the HTTPS URL in Safari → **Add to Home Screen**. No Mac, no App Store. |
-| **Native Swift app** → [`ACTIG.swiftpm/`](ACTIG.swiftpm) | iPad (and Mac) | Open in **Swift Playgrounds** and Run. Fully offline, all-native. |
-| **Web app in Swift Playgrounds** → [`ACTIGWeb.swiftpm/`](ACTIGWeb.swiftpm) | iPad — running the web build inside Swift Playgrounds | Open in **Swift Playgrounds** and Run. Bundles the web app + local server. |
+| **Native Swift app** → [`ACTIG.swiftpm/`](ACTIG.swiftpm) | iPad (and Mac) only | Open in **Swift Playgrounds** and Run. *(Swift Playgrounds is not available on iPhone — use the PWA there.)* |
 
-Both Swift Playgrounds packages are covered in
-[`docs/SWIFT_PLAYGROUNDS.md`](docs/SWIFT_PLAYGROUNDS.md). **iPhone users: use the
-PWA.** All builds run offline (the native app fully; the web builds run the UI/3D/
-voice offline with the model loading once online).
+Both deliver the same features and run fully offline. **iPhone users: use the
+PWA** — see [`web/README.md`](web/README.md) for the step-by-step install.
 
 ---
 ## Native Swift app (iPad / Mac)

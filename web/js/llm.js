@@ -45,19 +45,56 @@ async function chooseModel(){
 const FAIL_KEY = 'actig_llm_fails';
 const FAIL_TS = 'actig_llm_fail_ts';
 
+// Evaluate a simple arithmetic request ("what is 12 times 7", "3 + 4 * 2").
+// Only ever runs after the string is reduced to digits/operators, so it is safe.
+function tryMath(t){
+  const s = t
+    .replace(/\bplus\b/g, '+').replace(/\bminus\b/g, '-')
+    .replace(/\b(?:times|multiplied by|x)\b/g, '*')
+    .replace(/\b(?:divided by|over)\b/g, '/');
+  const m = s.match(/-?\d+(?:\.\d+)?(?:\s*[-+*/]\s*-?\d+(?:\.\d+)?)+/);
+  if (!m) return null;
+  const expr = m[0];
+  if (!/^[\d\s.+\-*/()]+$/.test(expr)) return null;
+  try{
+    const val = Function('"use strict";return (' + expr + ')')();
+    if (typeof val === 'number' && isFinite(val)){
+      const out = Number.isInteger(val) ? val : Number(val.toFixed(6));
+      return `That is ${out}, sir.`;
+    }
+  }catch{}
+  return null;
+}
+
 // Lightweight conversational fallback for lite mode (no full model). It can't
-// truly reason, but it converses for common openers instead of just echoing.
+// truly reason, but it handles small talk, the time/date, arithmetic and "what
+// can you do" so the assistant still understands and acts on common requests
+// instead of returning a single canned line.
 function stubReply(t){
   const has = (...xs) => xs.some((x) => t.includes(x));
   if (!t.trim()) return 'I am here, sir. How may I help?';
-  if (has('hello','hi ','hey','good morning','good evening','greetings')) return 'Hello, sir. Lovely to hear from you. How can I help today?';
-  if (has('how are you','how do you do','how is it going')) return 'Running smoothly in lite mode, sir, and at your service. How are you?';
+
+  // Deterministic facts the device can answer perfectly even offline.
+  if (has('what time','the time','time is it','current time'))
+    return `It is ${new Date().toLocaleTimeString()}, sir.`;
+  if (has('what day','what date','the date','today\'s date','what is today','what\'s today'))
+    return `Today is ${new Date().toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}, sir.`;
+  const math = tryMath(t);
+  if (math) return math;
+
+  if (has('hello','hi ','hey','good morning','good afternoon','good evening','greetings')) return 'Hello, sir. Lovely to hear from you. How can I help today?';
+  if (has('how are you','how do you do','how is it going','how are things')) return 'Running smoothly, sir, and at your service. How are you?';
   if (has('thank')) return 'Always a pleasure, sir.';
   if (has('your name','who are you','what are you')) return 'I am A.C.T.I.G., sir — your on-device assistant.';
+  if (has('what can you do','what do you do','your features','capabilities','help me','how do i use'))
+    return 'I can chat with you, open a 3D modelling space and build or edit shapes by voice and touch, enable camera hand control, and analyse objects through the camera, sir. On a device with WebGPU I also run a full reasoning model for richer conversation.';
   if (has('joke')) return 'Why did the hologram go to therapy, sir? It had too many unresolved projections.';
   if (has('bye','goodnight','good night','see you')) return 'Goodbye for now, sir. Say “wake up ACTIG” whenever you need me.';
-  if (t.endsWith('?')) return 'Good question, sir. My full reasoning model is in lite mode on this device — for richer answers, open it on an iPad or a WebGPU desktop. I can still run 3D, camera and voice commands now.';
-  return 'Understood, sir. I am in lite mode here, so my conversation is limited — but commands like “bring up the 3D project”, “add a cube”, “scan this”, and the camera controls all work.';
+  if (has('yes','yeah','sure','okay','ok ','correct','right')) return 'Very good, sir.';
+  if (has('no','nope','not really')) return 'Understood, sir. What would you prefer?';
+
+  if (t.endsWith('?')) return 'A fair question, sir. My full reasoning model is in lite mode on this device — for a detailed answer, open A.C.T.I.G. on an iPad or a WebGPU-capable browser. Meanwhile I can tell the time and date, do arithmetic, and run the 3D, camera and voice features.';
+  return `Noted, sir — “${t.length > 60 ? t.slice(0, 60) + '…' : t}”. I am in lite mode here so my free conversation is limited, but commands like “bring up the 3D project”, “add a cube”, “scan this” and the camera controls all work, and I can handle the time, date and quick maths.`;
 }
 
 export class Brain {

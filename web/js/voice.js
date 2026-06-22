@@ -66,12 +66,16 @@ export class Voice {
   }
 
   // ---- STT ----
-  async startListening({ onPartial, onFinal, onSpeechStart }){
+  // `onStatus` reports 'listening' | 'transcribing' | 'unavailable' so the UI can
+  // tell the user what the microphone is doing (and fall back to typing if voice
+  // input can't run on this browser/network).
+  async startListening({ onPartial, onFinal, onSpeechStart, onStatus }){
     this.onPartial = onPartial; this.onFinal = onFinal; this.onSpeechStart = onSpeechStart;
+    this.onStatus = onStatus || (() => {});
     if (this.listening) return;
     this.listening = true;
 
-    if (this._useWebSpeech){ this._startWebSpeech(); return; }
+    if (this._useWebSpeech){ this._startWebSpeech(); this.onStatus('listening'); return; }
     await this._startWhisper();
   }
 
@@ -139,9 +143,11 @@ export class Voice {
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
+      this.onStatus?.('listening');
     }catch(err){
       console.warn('Whisper STT unavailable:', err);
       this.listening = false;   // voice input off; text + TTS still work
+      this.onStatus?.('unavailable');
     }
   }
 
@@ -164,6 +170,7 @@ export class Voice {
   async _transcribe(){
     if (!this._chunks.length || !this._asr) return;
     try{
+      this.onStatus?.('transcribing');
       const blob = new Blob(this._chunks, { type: this._recorder.mimeType || 'audio/webm' });
       const buf = await blob.arrayBuffer();
       const decoded = await this._ac.decodeAudioData(buf);
@@ -172,6 +179,7 @@ export class Voice {
       const text = (out?.text || '').trim();
       if (text){ this.onPartial?.(text); this.onFinal?.(text); }
     }catch(e){ console.warn('transcribe failed', e); }
+    finally{ if (this.listening) this.onStatus?.('listening'); }
   }
 
   _resampleTo16k(audioBuffer){

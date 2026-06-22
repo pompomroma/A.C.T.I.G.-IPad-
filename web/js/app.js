@@ -26,10 +26,10 @@ const el = {
 const state = {
   mode: 'dormant', workspace: 'conversation',
   userMicMuted: false, aiVoiceMuted: false, cameraControl: false,
-  messages: [], liveEl: null,
+  messages: [], liveEl: null, voiceNoticeShown: false,
 };
 
-const brain = new Brain();
+let brain = new Brain();
 const voice = new Voice();
 let scene = null, scenePromise = null, hands = null, vision = null, stream = null;
 let modelReadyPromise = null;
@@ -41,14 +41,29 @@ function boot(){
   el.boot.classList.add('hidden');
   setStatus('starting…');
 
-  // Load the model in the BACKGROUND; the UI stays responsive meanwhile.
-  modelReadyPromise = brain.load((p) => setStatus(`loading model… ${Math.round(p * 100)}%`))
-    .then(() => setStatus(`ready · ${brain.displayName}`))
-    .catch((e) => { console.warn(e); setStatus('ready (offline stub)'); });
+  loadModel();                       // load the brain in the BACKGROUND; UI stays responsive
 
   handleDeepLink();                  // allow launching straight into 3D/camera (Siri Shortcut)
   window.addEventListener('error', (e) => console.warn('ACTIG error:', e.message));
   window.addEventListener('unhandledrejection', (e) => console.warn('ACTIG rejection:', e.reason));
+}
+
+// Loads (or reloads) the language model in the background.
+function loadModel(){
+  modelReadyPromise = brain.load((p) => setStatus(`loading model… ${Math.round(p * 100)}%`))
+    .then(() => setStatus(brain.usingStub ? 'lite mode · tap to retry full model' : `ready · ${brain.displayName}`))
+    .catch((e) => { console.warn(e); setStatus('ready (offline stub)'); });
+  return modelReadyPromise;
+}
+
+// Lets the user recover from lite mode (e.g. after a transient crash-loop guard)
+// by tapping the status line to re-attempt loading the full on-device model.
+function retryModel(){
+  if (!brain.usingStub) return;
+  try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); }catch{}
+  brain = new Brain();
+  setStatus('retrying full model…');
+  loadModel();
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
@@ -86,6 +101,7 @@ function bindUI(){
   el.sceneToolbar.querySelectorAll('button').forEach((b) =>
     b.addEventListener('click', () => onTool(b.dataset.tool)));
   el.scanBtn.addEventListener('click', () => scanObject('What is this object?'));
+  el.status.addEventListener('click', retryModel);   // tap status to retry full model
 }
 
 // ---------- lifecycle ----------
@@ -112,7 +128,26 @@ function startListening(){
     onPartial: (t) => { showLive(t); const w = checkWakeSleep(t); if (w === 'sleep') shutdown(); },
     onFinal: (t) => onFinalSpeech(t),
     onSpeechStart: () => { if (state.mode === 'responding' || voice.speaking) interrupt(); },
+    onStatus: onVoiceStatus,
   });
+}
+
+// Reflects the microphone state in the status line, and — the first time voice
+// input proves unavailable on this browser/network — tells the user to type
+// instead (so a silent STT failure never looks like the AI ignoring them).
+function onVoiceStatus(s){
+  if (state.mode === 'dormant') return;
+  if (s === 'unavailable'){
+    if (!state.voiceNoticeShown){
+      state.voiceNoticeShown = true;
+      announce('Voice input is unavailable on this browser, sir — please type to me and I will still reply by voice.');
+    }
+    setStatus('online · type to me');
+  } else if (s === 'transcribing'){
+    setStatus('transcribing…');
+  } else if (s === 'listening' && state.mode !== 'responding'){
+    setStatus('online · listening');
+  }
 }
 
 function onFinalSpeech(text){
@@ -160,7 +195,7 @@ async function route(intent){
     case 'undo': { const s = await ensureScene(); s.undo(); return announce('Reverted, sir.'); }
     case 'redo': { const s = await ensureScene(); s.redo(); return announce('Restored, sir.'); }
     case 'scene': return applyScene(intent);
-    case 'chat': default: return generateReply(text);
+    case 'chat': default: return generateReply(intent.text);
   }
 }
 
@@ -179,7 +214,10 @@ async function applyScene(i){
 }
 
 // ---------- LLM ----------
-async function generateReply(prompt){
+// `override`, when given, is the text actually sent to the model as the latest
+// user turn (e.g. a camera/vision-augmented prompt) in place of the short text
+// shown in the transcript. For plain chat it equals the visible message.
+async function generateReply(override){
   brain.abort();
   setMode('responding'); setStatus('thinking…');
   // The model loads in the background — wait for it on the first request.
@@ -187,6 +225,12 @@ async function generateReply(prompt){
   // Snapshot recent history BEFORE adding the empty assistant bubble (keeps
   // context + memory bounded on mobile and avoids sending an empty turn).
   const history = state.messages.filter(m => m.role !== 'system').slice(-12);
+  if (override){
+    if (history.length && history[history.length - 1].role === 'user')
+      history[history.length - 1] = { role: 'user', content: override };
+    else
+      history.push({ role: 'user', content: override });
+  }
   const bubble = addMessage('assistant', '');
   try{
     let spoke = false;

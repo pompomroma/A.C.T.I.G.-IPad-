@@ -1,12 +1,14 @@
 // A.C.T.I.G. — main controller. Wires the DOM UI to the brain (WebLLM), voice
 // (TTS + Whisper STT + barge-in), the Three.js 3D space, camera hand control and
 // object analysis. Mirrors the native app's AssistantController.
+//
+// IMPORTANT: only light modules are imported statically. The heavy CDN-backed
+// modules (Three.js scene, MediaPipe hands/vision) are loaded lazily the first
+// time they're needed, so a slow/blocked CDN can never stop the core app (chat,
+// voice, UI) from working.
 
 import { Brain } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
-import { Scene3D } from './scene.js';
-import { Hands } from './hands.js';
-import { Vision } from './vision.js';
 import { parse } from './intent.js';
 
 const WELCOME = 'Welcome sir, ACTIG at your service sir, how may I assist you sir.';
@@ -29,18 +31,35 @@ const state = {
 
 const brain = new Brain();
 const voice = new Voice();
-const vision = new Vision();
-let scene = null, hands = null, stream = null;
+let scene = null, scenePromise = null, hands = null, vision = null, stream = null;
+let modelReadyPromise = null;
 
-// ---------- boot ----------
-(async function boot(){
-  setStatus('loading model…');
-  el.boot.textContent = 'Loading A.C.T.I.G. brain…';
-  await brain.load((p) => { el.boot.textContent = `Loading A.C.T.I.G. brain… ${Math.round(p*100)}%`; });
-  setStatus(`ready · ${brain.displayName}`);
+// ---------- boot (UI first, model in background) ----------
+boot();
+function boot(){
+  bindUI();                          // wire the UI immediately — never gated on a download
   el.boot.classList.add('hidden');
-  bindUI();
-})();
+  setStatus('starting…');
+
+  // Load the model in the BACKGROUND; the UI stays responsive meanwhile.
+  modelReadyPromise = brain.load((p) => setStatus(`loading model… ${Math.round(p * 100)}%`))
+    .then(() => setStatus(`ready · ${brain.displayName}`))
+    .catch((e) => { console.warn(e); setStatus('ready (offline stub)'); });
+
+  handleDeepLink();                  // allow launching straight into 3D/camera (Siri Shortcut)
+  window.addEventListener('error', (e) => console.warn('ACTIG error:', e.message));
+  window.addEventListener('unhandledrejection', (e) => console.warn('ACTIG rejection:', e.reason));
+}
+
+// Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
+// this is what an iOS Shortcut/Siri uses to bring up the 3D space "from anywhere".
+function handleDeepLink(){
+  const h = (location.hash + ' ' + location.search).toLowerCase();
+  if (!h.trim()) return;
+  if (/scene|3d/.test(h)){ wake(); setWorkspace('scene3D'); }
+  else if (/camera|scan/.test(h)){ wake(); setWorkspace('camera'); }
+  else if (/wake/.test(h)){ wake(); }
+}
 
 // ---------- UI wiring ----------
 function bindUI(){
@@ -137,23 +156,24 @@ async function route(intent){
       el.video.classList.remove('detecting'); stopCamera();
       return announce('Camera control disabled, sir.');
     case 'analyze': setWorkspace('camera'); return scanObject(intent.question);
-    case 'undo': ensureScene(); scene.undo(); return announce('Reverted, sir.');
-    case 'redo': ensureScene(); scene.redo(); return announce('Restored, sir.');
+    case 'undo': { const s = await ensureScene(); s.undo(); return announce('Reverted, sir.'); }
+    case 'redo': { const s = await ensureScene(); s.redo(); return announce('Restored, sir.'); }
     case 'scene': return applyScene(intent);
     case 'chat': default: return generateReply(text);
   }
 }
 
-function applyScene(i){
-  setWorkspace('scene3D'); ensureScene();
+async function applyScene(i){
+  setWorkspace('scene3D');
+  const s = await ensureScene();
   switch(i.action){
-    case 'add': scene.addShape(i.kind); return announce(`Added a ${i.kind}, sir.`);
-    case 'multiply': scene.multiply(i.kind, i.count); return announce(`Created ${i.count} ${i.kind}s, sir.`);
-    case 'grow': scene.grow(); return announce('Enlarged, sir.');
-    case 'shrink': scene.shrink(); return announce('Shrunk, sir.');
-    case 'delete': scene.deleteSelected(); return announce('Deleted, sir.');
-    case 'swap': scene.swapFirstTwo(); return announce('Swapped positions, sir.');
-    case 'clear': scene.clear(); return announce('Scene cleared, sir.');
+    case 'add': s.addShape(i.kind); return announce(`Added a ${i.kind}, sir.`);
+    case 'multiply': s.multiply(i.kind, i.count); return announce(`Created ${i.count} ${i.kind}s, sir.`);
+    case 'grow': s.grow(); return announce('Enlarged, sir.');
+    case 'shrink': s.shrink(); return announce('Shrunk, sir.');
+    case 'delete': s.deleteSelected(); return announce('Deleted, sir.');
+    case 'swap': s.swapFirstTwo(); return announce('Swapped positions, sir.');
+    case 'clear': s.clear(); return announce('Scene cleared, sir.');
   }
 }
 
@@ -161,6 +181,8 @@ function applyScene(i){
 async function generateReply(prompt){
   brain.abort();
   setMode('responding'); setStatus('thinking…');
+  // The model loads in the background — wait for it on the first request.
+  if (!brain.ready){ setStatus('warming up the model…'); await modelReadyPromise; }
   const bubble = addMessage('assistant', '');
   try{
     let spoke = false;
@@ -172,8 +194,8 @@ async function generateReply(prompt){
       if (el.status.textContent === 'thinking…') setStatus('responding');
     }
     if (!state.aiVoiceMuted) voice.flush();
-    if (!spoke){ setMode('awake'); setStatus('listening'); }
-    else setTimeout(() => { if (state.mode === 'responding'){ setMode('awake'); setStatus('listening'); } }, 300);
+    if (!bubble.content.trim()) bubble.el.textContent = '(no response — see status)';
+    setMode('awake'); setStatus('listening');
   }catch(e){
     bubble.el.textContent += ` [error: ${e.message}]`;
     setMode('awake'); setStatus('listening');
@@ -194,10 +216,11 @@ function stopCamera(){
 }
 
 async function enableCameraControl(){
-  ensureScene(); setWorkspace('scene3D');
+  const s = await ensureScene(); setWorkspace('scene3D');
   try{
     await startCamera('user');                       // front camera for hands
-    if (!hands) hands = new Hands(el.video, scene, el.handOverlay);
+    const { Hands } = await import('./hands.js');
+    if (!hands) hands = new Hands(el.video, s, el.handOverlay);
     const ok = await hands.init();
     if (!ok){ announce('Hand tracking is unavailable on this browser, sir.'); stopCamera(); return; }
     state.cameraControl = true;
@@ -208,13 +231,19 @@ async function enableCameraControl(){
   }catch(e){ announce('I could not access the camera, sir.'); }
 }
 
+async function getVision(){
+  if (!vision){ const { Vision } = await import('./vision.js'); vision = new Vision(); }
+  await vision.init();
+  return vision;
+}
+
 async function scanObject(question){
   setWorkspace('camera');
   try{
     if (!stream) await startCamera('environment');
-    await vision.init();
+    const v = await getVision();
     setStatus('analysing…');
-    const summary = await vision.analyze(el.video);
+    const summary = await v.analyze(el.video);
     addMessage('user', question);
     const prompt = `Camera vision reports: ${summary}. The user asks: "${question}". Answer concisely, sir.`;
     await generateReply(prompt);
@@ -226,9 +255,9 @@ async function onFile(e){
   el.fileInput.value = '';
   addMessage('user', `📎 ${file.name}`);
   try{
-    await vision.init();
+    const v = await getVision();
     const img = await loadImage(file);
-    const summary = await vision.analyze(img);
+    const summary = await v.analyze(img);
     await generateReply(`The user attached an image. Vision reports: ${summary}. Briefly describe it, sir.`);
   }catch(_){ announce('I received the file, sir, but could not analyse it.'); }
 }
@@ -237,23 +266,27 @@ function loadImage(file){
 }
 
 // ---------- tools ----------
-function onTool(tool){
-  ensureScene();
+async function onTool(tool){
+  const s = await ensureScene();
   ({
-    box:()=>scene.addShape('box'), sphere:()=>scene.addShape('sphere'),
-    cylinder:()=>scene.addShape('cylinder'), cone:()=>scene.addShape('cone'),
-    grow:()=>scene.grow(), shrink:()=>scene.shrink(), delete:()=>scene.deleteSelected(),
-    undo:()=>scene.undo(), redo:()=>scene.redo(),
+    box:()=>s.addShape('box'), sphere:()=>s.addShape('sphere'),
+    cylinder:()=>s.addShape('cylinder'), cone:()=>s.addShape('cone'),
+    grow:()=>s.grow(), shrink:()=>s.shrink(), delete:()=>s.deleteSelected(),
+    undo:()=>s.undo(), redo:()=>s.redo(),
   })[tool]?.();
 }
 
 // ---------- scene/workspace ----------
+// Lazily imports Three.js + creates the scene exactly once.
 function ensureScene(){
-  if (scene) return;
-  el.sceneCanvas.classList.remove('hidden');
-  scene = new Scene3D(el.sceneCanvas);
-  scene.onChange = () => {};
-  scene.resize();
+  if (scene) return Promise.resolve(scene);
+  if (!scenePromise){
+    el.sceneCanvas.classList.remove('hidden');
+    scenePromise = import('./scene.js')
+      .then(({ Scene3D }) => { scene = new Scene3D(el.sceneCanvas); scene.resize(); return scene; })
+      .catch((e) => { announce('The 3D engine could not load, sir.'); throw e; });
+  }
+  return scenePromise;
 }
 
 function setWorkspace(ws){
@@ -267,7 +300,7 @@ function setWorkspace(ws){
   el.cameraWS.classList.toggle('hidden', !camOn);
   el.handOverlay.classList.toggle('hidden', !state.cameraControl);
 
-  if (sceneOn){ ensureScene(); scene.resize(); }
+  if (sceneOn){ ensureScene().then((s) => s.resize()).catch(()=>{}); }
   if (camOn){ el.video.classList.remove('detecting'); startCamera('environment').catch(()=>{}); }
   else if (!state.cameraControl){ stopCamera(); }
 }

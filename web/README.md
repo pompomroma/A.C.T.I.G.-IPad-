@@ -65,6 +65,40 @@ first. This is the cause of the *"Resource not accessible by integration"* /
   *"shut down all systems"*. Talk over a reply to interrupt and restate.
 - Two mic buttons mute **your** mic and **A.C.T.I.G.'s** voice independently.
 
+> **Not replying?** It now binds the UI and answers immediately; the model loads
+> in the background (status shows "loading model… N%"). The first spoken/typed
+> request waits for that to finish ("warming up the model…"). If WebGPU is off or
+> the model CDN is blocked, it falls back to a stub that still replies. If the
+> status sticks on an error, hard-refresh once so the updated service worker
+> loads.
+
+## Bring up the 3D space "from another app" (Siri Shortcut)
+A web app **cannot run in the background or overlay other apps** on iOS (see
+*Background behaviour* below). The supported way to summon it from anywhere is a
+**deep link** — A.C.T.I.G. opens straight into a workspace based on the URL:
+
+- `…/#scene` → opens the **3D project space** on launch
+- `…/#camera` → opens **camera/object analysis**
+- `…/#wake` → just wakes the assistant
+
+Make it voice-triggerable from inside any app:
+1. Open the **Shortcuts** app → **＋** → add action **"Open URLs"** →
+   `https://<your-pages-url>/#scene`.
+2. Name the shortcut e.g. **"ACTIG 3D"**.
+3. Now, from *any* app, say **"Hey Siri, ACTIG 3D"** — iOS switches to A.C.T.I.G.
+   and it opens the 3D project space immediately.
+
+## Background behaviour (honest limits)
+iOS suspends web apps (and most native apps) when they're not in front, so —
+exactly as noted for the native build in [`../docs/CAPABILITIES.md`](../docs/CAPABILITIES.md):
+- it **cannot keep listening/responding while another app is open**,
+- it **cannot float over other apps**, and
+- it **cannot run while the device is off**.
+
+What it *does*: state (chat + 3D scene) **autosaves and restores instantly** on
+relaunch, and the Siri Shortcut above brings it to the front into the 3D space on
+command. That's the real, supported equivalent of "summon it from anywhere".
+
 ## Local testing (optional, desktop)
 On a computer you can serve it over `localhost` (a secure context):
 ```bash

@@ -1,8 +1,13 @@
 // 3D modelling project space powered by Three.js. Shapes can be added,
 // multiplied, scaled, deleted, swapped and dragged. Every edit goes through a
 // command stack for undo/redo, and the scene autosaves to localStorage.
+//
+// Three.js is imported from a LOCAL vendored copy by relative path (not a bare
+// "three" specifier). This means the 3D space works even on older/locked-down
+// Safari without import-map support and on school devices whose content filter
+// blocks CDNs (e.g. the 10th-gen iPad) — and it works fully offline.
 
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
 
 const STORE_KEY = 'actig.scene.v1';
 let _seq = 0;
@@ -36,7 +41,11 @@ export class Scene3D {
   }
 
   _initThree(){
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+    // powerPreference default + graceful options for weaker GPUs (10th-gen iPad).
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas, antialias: true, alpha: true,
+      powerPreference: 'default', failIfMajorPerformanceCaveat: false,
+    });
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
     this.camera.position.set(0, 1.1, 3.4);

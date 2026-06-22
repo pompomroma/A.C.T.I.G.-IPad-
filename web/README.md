@@ -72,6 +72,20 @@ first. This is the cause of the *"Resource not accessible by integration"* /
 > status sticks on an error, hard-refresh once so the updated service worker
 > loads.
 
+## Open A.C.T.I.G. by voice (without tapping the icon)
+iOS does **not** let a third-party app register its own always-on wake word
+("wake up ACTIG") to launch itself — only **Siri** can open an app by voice. The
+supported way is a one-time **Siri Shortcut** that opens A.C.T.I.G.'s URL; the app
+then auto-wakes itself on launch (via the `#wake` deep link):
+
+1. Open the **Shortcuts** app → **＋** → add action **"Open URLs"** →
+   `https://<your-pages-url>/#wake`.
+2. Rename the shortcut to your trigger phrase, e.g. **"Wake up ACTIG"**.
+3. Now, from the Home Screen or inside any app, say **"Hey Siri, wake up ACTIG"** —
+   iOS opens A.C.T.I.G. and it comes online and greets you automatically.
+
+(Once it's open, the in-app wake word and "shut down all systems" work as normal.)
+
 ## Bring up the 3D space "from another app" (Siri Shortcut)
 A web app **cannot run in the background or overlay other apps** on iOS (see
 *Background behaviour* below). The supported way to summon it from anywhere is a
@@ -118,6 +132,15 @@ For on-device testing you still need the HTTPS URL (step 1).
   WebGPU desktop**, which have far more memory headroom.
 - **Conversation vs commands:** with the model loaded it holds normal everyday
   conversation; in lite mode (no model) it still does commands + basic chat.
+- **Auto model selector:** the model size is chosen automatically from the WebGPU
+  adapter (memory tier + shader-f16 support) — small on phones/4 GB iPads, larger
+  on roomy desktops — so you never have to pick.
+- **School / managed iPads (e.g. 10th-gen):** Three.js is bundled locally
+  (`vendor/three.module.js`) and imported by relative path, so the **3D space works
+  even when import maps are unsupported or the CDN is blocked** by a content
+  filter. The conversation model and MediaPipe camera features still need network
+  on first load and a WebGPU-capable Safari; if those are blocked the 3D space,
+  voice output and text chat still function.
 - **No WebGPU?** The LLM falls back to a stub so the UI/voice/3D/camera all still
   work; enable WebGPU (iOS 18+) for real reasoning.
 - **First load is heavy** (model weights + Whisper + MediaPipe). They're cached by

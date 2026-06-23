@@ -29,6 +29,12 @@ const SYSTEM_PROMPT_KO =
 
 const systemPrompt = (lang) => (lang === 'ko' ? SYSTEM_PROMPT_KO : SYSTEM_PROMPT_EN);
 
+// Added to the system prompt for complex requests so the model answers thoroughly.
+const THOROUGH = {
+  en: ' For complex or detailed requests, think carefully and give a thorough, well-structured, complete answer; do not stop early.',
+  ko: ' 복잡하거나 자세한 요청에는 신중히 생각하여 충실하고 잘 구성된 완전한 답변을 끝까지 제공하세요.',
+};
+
 // AUTO model-size selector. Inspects the real WebGPU adapter (memory tier +
 // shader-f16 support) and the reported device memory, then picks the largest
 // model the device can safely run. It is deliberately conservative on Safari
@@ -142,11 +148,12 @@ function stubReply(t, lang){
 export function estimateMaxTokens(text){
   const t = (text || '').toLowerCase();
   const words = t.trim().split(/\s+/).filter(Boolean).length;
-  const complex = /\b(explain|detail|elaborate|why|how (do|does|to|can)|step by step|in depth|compare|difference|list|write|code|program|essay|story|plan|describe|analy|summar|reasons?|pros and cons)\b/.test(t);
-  if (complex || words >= 40) return 768;
-  if (words >= 16) return 384;
-  if (words <= 6) return 128;
-  return 220;
+  const complex = /\b(explain|detail|elaborate|why|how (do|does|to|can)|step by step|in depth|compare|difference|list|write|code|program|essay|story|plan|describe|analy|summar|reasons?|pros and cons)\b/.test(t)
+    || /(설명|자세히|왜|어떻게|비교|차이|목록|작성|코드|이야기|계획|단계)/.test(t);
+  if (complex || words >= 40) return 1024;
+  if (words >= 16) return 640;
+  if (words <= 6) return 192;
+  return 384;
 }
 
 export class Brain {
@@ -214,24 +221,75 @@ export class Brain {
   }
 
   /** Async generator yielding token deltas. Respects abort().
-   *  `opts.maxTokens` bounds the reply length; `opts.lang` picks the reply language. */
+   *  `opts.maxTokens` is the per-round budget; `opts.lang` the language; `opts.complex`
+   *  adds the thorough directive. AUTO-EXTENDS: if a round stops because it hit the
+   *  length cap, it continues generating (up to a hard cap / round limit) so answers
+   *  never end mid-sentence; it stops immediately on a natural finish. */
   async *reply(messages, opts = {}){
     if (this.usingStub){ yield* this.replyLite(messages, opts.lang); return; }
 
     this._abort = new AbortController();
     const signal = this._abort.signal;
 
-    const chat = [{ role:'system', content: systemPrompt(opts.lang) },
-                  ...messages.map((m) => ({ role: m.role, content: m.content }))];
-    const stream = await this.engine.chat.completions.create({
-      messages: chat, stream: true, temperature: 0.7, top_p: 0.9,
-      max_tokens: opts.maxTokens || 384,
-    });
-    for await (const chunk of stream){
-      if (signal.aborted){ try{ await this.engine.interruptGenerate(); }catch{} return; }
-      const delta = chunk.choices?.[0]?.delta?.content;
-      if (delta) yield delta;
+    const sys = systemPrompt(opts.lang) + (opts.complex ? THOROUGH[opts.lang === 'ko' ? 'ko' : 'en'] : '');
+    const convo = [{ role:'system', content: sys },
+                   ...messages.map((m) => ({ role: m.role, content: m.content }))];
+
+    const HARD_CAP = 1800;          // total generated tokens (approx) ceiling
+    const MAX_ROUNDS = 3;
+    let used = 0, round = 0, budget = opts.maxTokens || 384;
+
+    while (round < MAX_ROUNDS && used < HARD_CAP){
+      let finish = null, acc = '';
+      let stream;
+      try{
+        stream = await this.engine.chat.completions.create({
+          messages: convo, stream: true, temperature: 0.7, top_p: 0.9,
+          max_tokens: Math.max(64, Math.min(budget, HARD_CAP - used)),
+        });
+      }catch(e){ if (round === 0) throw e; break; }   // continuation failure: stop cleanly
+
+      for await (const chunk of stream){
+        if (signal.aborted){ try{ await this.engine.interruptGenerate(); }catch{} return; }
+        const ch = chunk.choices?.[0];
+        const delta = ch?.delta?.content;
+        if (delta){ acc += delta; yield delta; }
+        if (ch?.finish_reason) finish = ch.finish_reason;
+      }
+
+      used += Math.ceil(acc.length / 4);             // rough tokens
+      round++;
+      if (finish !== 'length' || !acc.trim()) break; // natural stop or empty → done
+      // Truncated: continue from what was said so far.
+      convo.push({ role:'assistant', content: acc });
+      budget = 512;
     }
+  }
+
+  /** Classify a free-form command into a structured intent (JSON). Used as a
+   *  fallback when the deterministic parser misses a paraphrase. Returns the parsed
+   *  object or null. Only meaningful when the full model is loaded. */
+  async classifyIntent(text, { lang, inScene } = {}){
+    if (this.usingStub || !this.engine) return null;
+    const sys =
+      'You map a user command for a 3D modelling assistant to ONE JSON object and nothing else. ' +
+      'Allowed "type": chat, wake, shutdown, openScene, openConversation, openCamera, ' +
+      'enableCameraControl, disableCameraControl, analyze, undo, redo, export, build, scene. ' +
+      'For 3D edits use {"type":"scene","action":...}; action one of add, multiply, grow, shrink, ' +
+      'rotate, move, moveTo, delete, swap, clear. add/multiply need "kind" (box, sphere, cylinder, ' +
+      'cone, pyramid, torus, plane) and multiply a "count". rotate has "axis"(x|y|z) and "degrees". ' +
+      'build needs "desc" (the object to model). If it is ordinary conversation, return {"type":"chat"}. ' +
+      'Output ONLY the JSON object.';
+    try{
+      const res = await this._withTimeout(this.engine.chat.completions.create({
+        messages: [{ role:'system', content: sys },
+                   { role:'user', content: `In 3D space: ${!!inScene}. Command: ${text}` }],
+        stream: false, temperature: 0.1, max_tokens: 96,
+      }), 8000, 'classifyIntent timed out');
+      const out = res.choices?.[0]?.message?.content || '';
+      const m = out.match(/\{[\s\S]*\}/);
+      return m ? JSON.parse(m[0]) : null;
+    }catch{ return null; }
   }
 
   /** Instant lite reply (rule-based). Always available — used both as the no-GPU

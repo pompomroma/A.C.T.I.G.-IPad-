@@ -9,7 +9,7 @@
 
 import { Brain, estimateMaxTokens } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
-import { parse } from './intent.js';
+import { parse, looksCommandish, intentFromAI } from './intent.js';
 import { buildModel, genericModel } from './modeler.js';
 import { t, getLang, toggleLang, applyI18n, shapeName } from './i18n.js';
 
@@ -189,7 +189,13 @@ function sendText(){
 }
 
 async function handleText(text, spoken){
-  const intent = parse(text, { workspace: state.workspace });
+  let intent = parse(text, { workspace: state.workspace });
+  // AI-interpret fallback: if the rules saw plain chat but it looks like a command
+  // and the full model is loaded, let the model classify it into a real command.
+  if (intent.type === 'chat' && brain.ready && !brain.usingStub && looksCommandish(text, state.workspace === 'scene3D')){
+    const ai = intentFromAI(await brain.classifyIntent(text, { lang: getLang(), inScene: state.workspace === 'scene3D' }), text);
+    if (ai) intent = ai;
+  }
   if (intent.type !== 'wake' && intent.type !== 'shutdown') addMessage('user', text);
   clearLive();
   await route(intent);
@@ -297,12 +303,13 @@ async function generateReply(override){
   // Adaptive length: short budget for simple chat, larger for complex asks.
   const lastUser = [...state.messages].reverse().find(m => m.role === 'user');
   const maxTokens = estimateMaxTokens(lastUser?.content || override || '');
+  const complex = maxTokens >= 640;   // thorough mode + more generous auto-extend
 
   const lang = getLang();
   const bubble = addMessage('assistant', '');
   try{
     let streamed = false;
-    for await (const tok of (full ? brain.reply(history, { maxTokens, lang }) : brain.replyLite(history, lang))){
+    for await (const tok of (full ? brain.reply(history, { maxTokens, lang, complex }) : brain.replyLite(history, lang))){
       bubble.el.textContent += tok;
       bubble.content += tok;
       scrollTranscript();

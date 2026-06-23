@@ -19,13 +19,60 @@ const NUM_WORDS = {
 
 const has = (t, ...needles) => needles.some((n) => t.includes(n));
 
+// Damerau-Levenshtein (optimal string alignment) edit distance — counts a
+// transposition ("opne"→"open") as a single edit, matching common typos/ASR slips.
+function levenshtein(a, b){
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const d = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) d[i][0] = i;
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++){
+    for (let j = 1; j <= n; j++){
+      const cost = a[i-1] === b[j-1] ? 0 : 1;
+      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + cost);
+      if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1])
+        d[i][j] = Math.min(d[i][j], d[i-2][j-2] + 1);
+    }
+  }
+  return d[m][n];
+}
+
+// Fuzzy keyword match: true if any English token of `t` equals/contains a keyword
+// or is within an edit-distance threshold (tolerates ASR slips / typos). Korean is
+// left to exact `has()` matching (single-syllable fuzziness is too risky).
+function fuzzyHas(t, ...keywords){
+  if (has(t, ...keywords)) return true;
+  const tokens = t.split(' ').filter((w) => w.length >= 3 && /[a-z]/.test(w));
+  for (const kw of keywords){
+    if (kw.includes(' ') || !/^[a-z]+$/.test(kw) || kw.length < 4) continue;
+    const thr = kw.length >= 7 ? 2 : 1;
+    for (const tok of tokens){
+      if (Math.abs(tok.length - kw.length) > thr) continue;
+      if (levenshtein(tok, kw) <= thr) return true;
+    }
+  }
+  return false;
+}
+
 function detectShape(t){
   for (const [k,v] of Object.entries(SHAPE_WORDS)) if (t.includes(k)) return v;
+  // Fuzzy pass for English shape words only (cube/box/sphere/ball/cylinder/cone…).
+  const tokens = t.split(' ').filter((w) => w.length >= 3 && /^[a-z]+$/.test(w));
+  for (const [k,v] of Object.entries(SHAPE_WORDS)){
+    if (!/^[a-z]+$/.test(k) || k.length < 4) continue;
+    const thr = k.length >= 7 ? 2 : 1;
+    for (const tok of tokens){ if (Math.abs(tok.length - k.length) <= thr && levenshtein(tok, k) <= thr) return v; }
+  }
   return null;
 }
 
 function extractCount(t){
   for (const [w,n] of Object.entries(NUM_WORDS)) if (t.includes(w)) return n;
+  // Korean native counters: "두 개", "세 번"…
+  const KO = { '한':1, '두':2, '세':3, '네':4, '다섯':5, '여섯':6, '일곱':7, '여덟':8, '아홉':9, '열':10 };
+  const km = t.match(/(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(개|번|것)/);
+  if (km) return KO[km[1]];
   const m = t.match(/\d+/);
   return m ? parseInt(m[0],10) : null;
 }
@@ -33,15 +80,23 @@ function extractCount(t){
 // `ctx.workspace` lets ambiguous editing words ("delete", "go back", a bare
 // "a ball") count as 3D commands ONLY while the 3D space is open. Everywhere
 // else they fall through to natural conversation, so chatting feels human.
+// Normalize transcripts/typed text: lowercase, NFC, strip punctuation, collapse
+// spaces — so matching is robust to ASR/text noise.
+export function norm(raw){
+  return (raw || '').toLowerCase().normalize('NFC').replace(/[.,!?;:~"'’]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function parse(raw, ctx = {}){
-  const t = (raw || '').toLowerCase().trim();
+  const t = norm(raw);
   const inScene = ctx.workspace === 'scene3D';
 
   // Always-global, unambiguous commands. (Korean needles alongside English.)
   if (has(t,'wake up actig','wake up act','wakeup actig','액티그 일어나','액티그 깨어나','일어나 액티그','깨어나')) return { type:'wake' };
   if (has(t,'shut down all systems','shutdown all systems','시스템 종료','모든 시스템 종료','전부 꺼','다 꺼')) return { type:'shutdown' };
 
-  if (has(t,'3d project','3d space','modeling','modelling','bring up the project','open the project','open the 3d','open 3d','3d 공간','모델링','프로젝트 열','3d 열'))
+  if (has(t,'3d project','3d space','bring up the project','open the project','3d 공간','모델링','프로젝트 열','3d 열')
+      || fuzzyHas(t,'modeling','modelling')
+      || (fuzzyHas(t,'open','bring') && /\b3\s?d\b|3차원/.test(t)))
     return { type:'openScene' };
   if (has(t,'go back to chat','close project','close the project','exit 3d','대화로','프로젝트 닫','3d 닫')) return { type:'openConversation' };
 
@@ -51,7 +106,8 @@ export function parse(raw, ctx = {}){
     return { type:'disableCameraControl' };
   if (has(t,'open camera','camera mode','카메라 열','카메라 모드')) return { type:'openCamera' };
 
-  if (has(t,'scan this','what is this','analyze this','analyse this','identify this','what am i holding','이거 뭐','이게 뭐','스캔','분석'))
+  if (has(t,'what is this','what am i holding','이거 뭐','이게 뭐','스캔','분석')
+      || fuzzyHas(t,'scan','analyze','analyse','identify'))
     return { type:'analyze', question: raw };
 
   // "undo"/"redo" as explicit words are safe anywhere; the looser synonyms only
@@ -62,7 +118,7 @@ export function parse(raw, ctx = {}){
   if (inScene && has(t,'do it again','다시 해')) return { type:'redo' };
 
   // Export / download the model as a file.
-  if (has(t,'export','download','save the model','save model','내보내기','다운로드','모델 저장','파일로 저장'))
+  if (fuzzyHas(t,'export','download') || has(t,'save the model','save model','내보내기','다운로드','모델 저장','파일로 저장'))
     return { type:'export' };
 
   // Generative modelling: "build/model a <thing>" composes primitives.
@@ -82,8 +138,8 @@ const TRANSFORM_WORDS = ['bigger','smaller','grow','shrink','rotate','spin','til
 // Detect a "build a <described object>" request (vs. adding a primitive shape or
 // transforming the selection). Returns { type:'build', desc } or null.
 function parseBuild(t, raw){
-  const strong = BUILD_VERBS.test(t) || has(t,'지어','설계','모델링','조립');
-  const make = has(t,'make','create','generate','build','만들','그려');
+  const strong = fuzzyHas(t,'build','model','design','construct','sculpt','assemble') || has(t,'지어','설계','모델링','조립');
+  const make = fuzzyHas(t,'make','create','generate','build') || has(t,'만들','그려');
   if (!strong && !make) return null;
   if (detectShape(t)) return null;                          // "make a cube" → add primitive
   if (TRANSFORM_WORDS.some(w => t.includes(w))) return null; // "make it bigger" → grow, etc.
@@ -104,7 +160,7 @@ const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put',
 function parseScene(t, inScene){
   // Rotate is checked before shape detection so "rotate the cube" turns it rather
   // than adding one. Word-boundary regex avoids false hits like "return".
-  if (inScene && (/\b(rotate|spin|turn|tilt|roll)\b/.test(t) || has(t,'회전','돌려','돌리','기울'))){
+  if (inScene && (fuzzyHas(t,'rotate','spin','turn','tilt','roll') || has(t,'회전','돌려','돌리','기울'))){
     let axis = 'y';
     if (/\b(up|down|forward|back(ward)?|tilt|pitch|x[- ]?axis)\b/.test(t) || has(t,'위','아래','기울')) axis = 'x';
     else if (/\b(roll|z[- ]?axis)\b/.test(t) || has(t,'롤','굴려')) axis = 'z';
@@ -114,7 +170,7 @@ function parseScene(t, inScene){
   }
 
   // Move is checked before shape detection so "move the cube left" moves it.
-  if (inScene && (/\b(move|shift|slide|nudge|drag)\b/.test(t) || has(t,'이동','옮겨','움직','밀'))){
+  if (inScene && (fuzzyHas(t,'move','shift','slide','nudge','drag') || has(t,'이동','옮겨','움직','밀'))){
     if (has(t,'center','middle','origin','가운데','중앙','원점')) return { type:'scene', action:'moveTo', x:0, y:0, z:0 };
     const step = 0.6; let dx=0, dy=0, dz=0;
     if (/\bleft\b/.test(t)  || has(t,'왼쪽','왼')) dx -= step;
@@ -130,19 +186,52 @@ function parseScene(t, inScene){
   if (!kind){
     // Selection edits only make sense while editing the 3D scene.
     if (!inScene) return null;
-    if (has(t,'bigger','grow','extend','enlarge','scale up','크게','키워','확대','커')) return { type:'scene', action:'grow' };
-    if (has(t,'smaller','shrink','scale down','작게','줄여','축소')) return { type:'scene', action:'shrink' };
-    if (has(t,'delete','remove it','delete it','삭제','지워','없애')) return { type:'scene', action:'delete' };
-    if (has(t,'swap','switch places','바꿔','교체')) return { type:'scene', action:'swap' };
+    if (fuzzyHas(t,'bigger','grow','extend','enlarge') || has(t,'scale up','크게','키워','확대','커')) return { type:'scene', action:'grow' };
+    if (fuzzyHas(t,'smaller','shrink') || has(t,'scale down','작게','줄여','축소')) return { type:'scene', action:'shrink' };
+    if (fuzzyHas(t,'delete','remove') || has(t,'삭제','지워','없애')) return { type:'scene', action:'delete' };
+    if (fuzzyHas(t,'swap') || has(t,'switch places','바꿔','교체')) return { type:'scene', action:'swap' };
     if (has(t,'clear the scene','clear scene','remove everything','start over','전부 삭제','다 지워','초기화')) return { type:'scene', action:'clear' };
     return null;
   }
   // A shape word only triggers creation with an explicit verb, OR when already in
   // the 3D space — so "I had a ball yesterday" stays a normal sentence.
-  const explicit = has(t, ...ADD_VERBS);
+  const explicit = has(t, ...ADD_VERBS) || fuzzyHas(t,'add','create','make','build','spawn','place','put');
   if (!explicit && !inScene) return null;
 
   const n = extractCount(t);
-  if (n && has(t,'multiply','copies','duplicate','times','복제','중복','곱')) return { type:'scene', action:'multiply', kind, count:n };
+  if (n && (fuzzyHas(t,'multiply','copies','duplicate') || has(t,'times','복제','중복','곱'))) return { type:'scene', action:'multiply', kind, count:n };
   return { type:'scene', action:'add', kind };
+}
+
+// Should the AI-interpret fallback even run? Only for command-like inputs the rules
+// didn't catch — keeps ordinary conversation fast and out of the classifier.
+export function looksCommandish(raw, inScene){
+  const t = norm(raw);
+  if (inScene) return true;
+  return /\b(add|make|create|build|model|design|move|rotate|spin|turn|scale|grow|shrink|bigger|smaller|delete|remove|clear|open|close|scan|export|download|undo|redo|enable|disable)\b/.test(t)
+    || has(t,'추가','만들','생성','이동','옮겨','회전','돌려','확대','축소','삭제','지워','열어','닫','스캔','내보내기','다운로드','모델링','지어');
+}
+
+// Validate the LLM classifier's JSON into the app's intent shape. Returns a clean
+// intent or null (so the caller falls back to plain chat).
+const AI_TYPES = new Set(['wake','shutdown','openScene','openConversation','openCamera',
+  'enableCameraControl','disableCameraControl','analyze','undo','redo','export','build','scene']);
+const SCENE_ACTIONS = new Set(['add','multiply','grow','shrink','rotate','move','moveTo','delete','swap','clear']);
+const KINDS = new Set(['box','sphere','cylinder','cone','pyramid','torus','plane']);
+
+export function intentFromAI(obj, raw){
+  if (!obj || typeof obj !== 'object' || !AI_TYPES.has(obj.type)) return null;
+  if (obj.type === 'analyze') return { type:'analyze', question: raw };
+  if (obj.type === 'build') return { type:'build', desc: (typeof obj.desc === 'string' && obj.desc.trim()) ? obj.desc : raw };
+  if (obj.type === 'scene'){
+    if (!SCENE_ACTIONS.has(obj.action)) return null;
+    const i = { type:'scene', action: obj.action };
+    if (obj.action === 'add'){ if (!KINDS.has(obj.kind)) return null; i.kind = obj.kind; }
+    if (obj.action === 'multiply'){ if (!KINDS.has(obj.kind)) return null; i.kind = obj.kind; i.count = Math.max(1, Math.min(25, parseInt(obj.count,10) || 2)); }
+    if (obj.action === 'rotate'){ i.axis = ['x','y','z'].includes(obj.axis) ? obj.axis : 'y'; i.degrees = Number.isFinite(+obj.degrees) ? +obj.degrees : 90; }
+    if (obj.action === 'move'){ const s=0.6; i.dx=(+obj.dx||0)*1||0; i.dy=(+obj.dy||0)||0; i.dz=(+obj.dz||0)||0; if(!i.dx&&!i.dy&&!i.dz) i.dx=s; }
+    if (obj.action === 'moveTo'){ i.x=+obj.x||0; i.y=+obj.y||0; i.z=+obj.z||0; }
+    return i;
+  }
+  return { type: obj.type };
 }

@@ -61,10 +61,42 @@ export function parse(raw, ctx = {}){
   if (inScene && has(t,'go back','previous action','revert','이전으로')) return { type:'undo' };
   if (inScene && has(t,'do it again','다시 해')) return { type:'redo' };
 
+  // Export / download the model as a file.
+  if (has(t,'export','download','save the model','save model','내보내기','다운로드','모델 저장','파일로 저장'))
+    return { type:'export' };
+
+  // Generative modelling: "build/model a <thing>" composes primitives.
+  const build = parseBuild(t, raw);
+  if (build) return build;
+
   const scene = parseScene(t, inScene);
   if (scene) return scene;
 
   return { type:'chat', text: raw };
+}
+
+const BUILD_VERBS = /\b(build|model|design|construct|sculpt|assemble)\b/;
+const TRANSFORM_WORDS = ['bigger','smaller','grow','shrink','rotate','spin','tilt','roll','move','shift','slide',
+  'delete','remove','clear','undo','redo','swap','크게','작게','확대','축소','회전','돌려','이동','옮겨','움직','삭제','지워','비워'];
+
+// Detect a "build a <described object>" request (vs. adding a primitive shape or
+// transforming the selection). Returns { type:'build', desc } or null.
+function parseBuild(t, raw){
+  const strong = BUILD_VERBS.test(t) || has(t,'지어','설계','모델링','조립');
+  const make = has(t,'make','create','generate','build','만들','그려');
+  if (!strong && !make) return null;
+  if (detectShape(t)) return null;                          // "make a cube" → add primitive
+  if (TRANSFORM_WORDS.some(w => t.includes(w))) return null; // "make it bigger" → grow, etc.
+  const desc = cleanBuildTarget(raw);
+  if (!desc) return null;
+  return { type:'build', desc };
+}
+
+function cleanBuildTarget(raw){
+  let s = (raw || '').toLowerCase().trim();
+  s = s.replace(/\b(build|model|design|construct|sculpt|assemble|make|create|generate|me|a|an|the|please|for me|now)\b/g, ' ');
+  s = s.replace(/(만들어 줘|만들어줘|만들어|만들|그려 줘|그려줘|그려|지어 줘|지어줘|지어|설계해|설계|모델링 해줘|모델링|조립해|조립|해 줘|해줘|좀|를|을|의|로)/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put','build','추가','만들','생성','놓','넣'];

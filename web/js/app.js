@@ -10,6 +10,7 @@
 import { Brain, estimateMaxTokens } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
 import { parse } from './intent.js';
+import { buildModel, genericModel } from './modeler.js';
 import { t, getLang, toggleLang, applyI18n, shapeName } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -205,8 +206,47 @@ async function route(intent){
     case 'undo': { const s = await ensureScene(); s.undo(); return announce(t('ack.undo')); }
     case 'redo': { const s = await ensureScene(); s.redo(); return announce(t('ack.redo')); }
     case 'scene': return applyScene(intent);
+    case 'build': return generateModel(intent.desc);
+    case 'export': return exportModel();
     case 'chat': default: return generateReply(intent.text);
   }
+}
+
+// ---------- generative 3D modelling ----------
+// Build a described object from primitives: try the template library, then the
+// full model (if loaded), then a generic composition so there's always a result.
+async function generateModel(desc){
+  setWorkspace('scene3D');
+  const s = await ensureScene();
+  setStatus(t('st.building'));
+  let model = buildModel(desc);
+  if (!model && brain.ready && !brain.usingStub){
+    const parts = await brain.modelSpec(desc).catch(() => null);
+    if (parts) model = { key: 'llm', parts };
+  }
+  let approx = false;
+  if (!model){ model = genericModel(); approx = true; }
+  s.addModel(model.parts);
+  announce(t('ack.built', desc) + (approx ? t('ack.approx') : ''));
+  setStatus(brain.ready ? t('st.listen') : t('st.listenLoading'));
+}
+
+// ---------- export / import ----------
+function download(text, filename, mime){
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function exportModel(){
+  const s = await ensureScene();
+  const obj = s.exportOBJ();
+  if (!obj){ announce(t('ack.nothingToExport')); return; }
+  download(obj, 'actig-model.obj', 'model/obj');
+  download(s.exportJSON(), 'actig-model.json', 'application/json');
+  announce(t('ack.exported'));
 }
 
 async function applyScene(i){
@@ -331,6 +371,15 @@ async function scanObject(question){
 async function onFile(e){
   const file = e.target.files?.[0]; if (!file) return;
   el.fileInput.value = '';
+  // An A.C.T.I.G. scene file (.json) → load it back into the 3D space to edit.
+  if (/\.json$/i.test(file.name) || file.type === 'application/json'){
+    try{
+      const nodes = JSON.parse(await file.text());
+      const s = await ensureScene(); setWorkspace('scene3D');
+      announce(s.importJSON(nodes) ? t('ack.imported') : t('ack.fileError'));
+    }catch(_){ announce(t('ack.fileError')); }
+    return;
+  }
   addMessage('user', `📎 ${file.name}`);
   try{
     const v = await getVision();
@@ -350,7 +399,7 @@ async function onTool(tool){
     box:()=>s.addShape('box'), sphere:()=>s.addShape('sphere'),
     cylinder:()=>s.addShape('cylinder'), cone:()=>s.addShape('cone'),
     grow:()=>s.grow(), shrink:()=>s.shrink(), rotate:()=>s.rotate(), delete:()=>s.deleteSelected(),
-    undo:()=>s.undo(), redo:()=>s.redo(),
+    undo:()=>s.undo(), redo:()=>s.redo(), export:()=>exportModel(),
   })[tool]?.();
 }
 

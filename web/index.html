@@ -35,22 +35,23 @@
 
   <div id="camera-workspace" class="workspace hidden">
     <div id="reticle" class="reticle"></div>
-    <button id="scan-btn" class="scan-btn">◎ Scan object</button>
+    <button id="scan-btn" class="scan-btn" data-i18n="ui.scan">◎ Scan object</button>
   </div>
 
   <!-- 3D toolbar (only visible in scene mode) -->
   <div id="scene-toolbar" class="scene-toolbar hidden">
-    <button data-tool="box">▣ Box</button>
-    <button data-tool="sphere">◯ Sphere</button>
-    <button data-tool="cylinder">⬭ Cyl</button>
-    <button data-tool="cone">▲ Cone</button>
+    <button data-tool="box" data-i18n="tool.box">▣ Box</button>
+    <button data-tool="sphere" data-i18n="tool.sphere">◯ Sphere</button>
+    <button data-tool="cylinder" data-i18n="tool.cylinder">⬭ Cyl</button>
+    <button data-tool="cone" data-i18n="tool.cone">▲ Cone</button>
     <span class="sep"></span>
-    <button data-tool="grow">＋ Grow</button>
-    <button data-tool="shrink">－ Shrink</button>
-    <button data-tool="delete">🗑 Del</button>
+    <button data-tool="grow" data-i18n="tool.grow">＋ Grow</button>
+    <button data-tool="shrink" data-i18n="tool.shrink">－ Shrink</button>
+    <button data-tool="rotate" data-i18n="tool.rotate">⟳ Rotate</button>
+    <button data-tool="delete" data-i18n="tool.delete">🗑 Del</button>
     <span class="sep"></span>
-    <button data-tool="undo">↶ Undo</button>
-    <button data-tool="redo">↷ Redo</button>
+    <button data-tool="undo" data-i18n="tool.undo">↶ Undo</button>
+    <button data-tool="redo" data-i18n="tool.redo">↷ Redo</button>
   </div>
 
   <!-- Jarvis hologram overlay -->
@@ -67,29 +68,30 @@
           <button data-ws="scene3D" class="ws">🧊</button>
           <button data-ws="camera" class="ws">🎯</button>
         </div>
+        <button id="lang-toggle" class="ws lang-btn" data-i18n="ui.langToggle">한국어</button>
       </div>
 
       <div id="transcript" class="transcript"></div>
 
       <div class="input-row">
         <label class="attach">📎<input id="file-input" type="file" accept="image/*" hidden /></label>
-        <input id="text-input" class="text-input" type="text" placeholder="Command A.C.T.I.G.…" />
+        <input id="text-input" class="text-input" type="text" placeholder="Command A.C.T.I.G.…" data-i18n-ph="ui.placeholder" />
         <button id="send-btn" class="send">▲</button>
       </div>
     </div>
 
     <div class="mic-row">
-      <button id="mic-user" class="mic"><span class="ic">🎙</span><small>You</small></button>
-      <button id="mic-ai" class="mic"><span class="ic">🔊</span><small>ACTIG</small></button>
+      <button id="mic-user" class="mic"><span class="ic">🎙</span><small data-i18n="ui.you">You</small></button>
+      <button id="mic-ai" class="mic"><span class="ic">🔊</span><small data-i18n="ui.ai">ACTIG</small></button>
     </div>
 
     <button id="wake-badge" class="wake-badge">
       <div class="core small"><span></span><span></span><span></span><b></b></div>
-      <div><div class="title">A.C.T.I.G.</div><small>tap or say “wake up ACTIG”</small></div>
+      <div><div class="title">A.C.T.I.G.</div><small data-i18n="ui.wakeHint">tap or say “wake up ACTIG”</small></div>
     </button>
   </div>
 
-  <div id="boot" class="boot">Initializing A.C.T.I.G.…</div>
+  <div id="boot" class="boot" data-i18n="ui.boot">Initializing A.C.T.I.G.…</div>
 
   <script type="module" src="js/app.js"></script>
   <script>

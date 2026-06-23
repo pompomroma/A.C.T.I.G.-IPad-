@@ -2,6 +2,10 @@
 // wake-word. On iOS Safari the Web Speech *recognition* API is unavailable, so we
 // run on-device Whisper (transformers.js) with energy-based voice activity
 // detection. On browsers that expose webkitSpeechRecognition we use it directly.
+// Korean + English: the recognition language, the Whisper language hint and the
+// TTS voice all follow the user's current language (see i18n.getLang()).
+
+import { getLang, hasHangul } from './i18n.js';
 
 // Whisper (esp. whisper-tiny) emits these "phantom" phrases on silence or noise
 // when nobody actually spoke — the classic video-credits/filler hallucinations.
@@ -57,17 +61,23 @@ export class Voice {
 
   _pickVoice(){
     const voices = this.tts ? this.tts.getVoices() : [];
-    this.voice = voices.find(v => /en-GB/i.test(v.lang) && /Daniel|Arthur|male/i.test(v.name))
+    this.voiceEn = voices.find(v => /en-GB/i.test(v.lang) && /Daniel|Arthur|male/i.test(v.name))
       || voices.find(v => /en-GB/i.test(v.lang))
       || voices.find(v => /^en/i.test(v.lang))
       || voices[0] || null;
+    this.voiceKo = voices.find(v => /^ko/i.test(v.lang)) || null;
+    this.voice = this.voiceEn;   // back-compat default
   }
 
   // ---- TTS ----
   speak(text){
     if (this.muted || !this.tts || !text.trim()) return;
     const u = new SpeechSynthesisUtterance(text.trim());
-    if (this.voice) u.voice = this.voice;
+    // Korean voice when the current language is Korean (or the text is Hangul).
+    const ko = getLang() === 'ko' || hasHangul(text);
+    const v = ko ? (this.voiceKo || this.voiceEn) : (this.voiceEn || this.voiceKo);
+    if (v) u.voice = v;
+    u.lang = ko ? 'ko-KR' : (this.voiceEn?.lang || 'en-GB');
     u.rate = 1.04;          // brisk, attentive
     u.pitch = 0.9;          // slightly lowered, mechanical
     u.onstart = () => { this.speaking = true; this._ttsStartedAt = performance.now(); };
@@ -115,7 +125,8 @@ export class Voice {
   _startWebSpeech(){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const r = new SR();
-    r.continuous = true; r.interimResults = true; r.lang = 'en-US';
+    r.continuous = true; r.interimResults = true;
+    r.lang = getLang() === 'ko' ? 'ko-KR' : 'en-US';
     let sawSpeech = false;
     r.onresult = (e) => {
       let interim = '', final = '';
@@ -142,7 +153,8 @@ export class Voice {
       if (!this._asr){
         const { pipeline } = await import('@huggingface/transformers');
         const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
-        this._asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { device });
+        // Multilingual tiny model so both Korean and English are recognised.
+        this._asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { device });
       }
       // echoCancellation stops the mic from hearing A.C.T.I.G.'s own TTS voice
       // (which otherwise gets transcribed back into phantom commands); noise
@@ -216,7 +228,7 @@ export class Voice {
       const rms = Math.sqrt(sum / Math.max(1, pcm.length));
       if (decoded.duration < 0.4 || rms < 0.01) return;            // not real speech
 
-      const out = await this._asr(pcm);
+      const out = await this._asr(pcm, { language: getLang() === 'ko' ? 'korean' : 'english', task: 'transcribe' });
       const text = (out?.text || '').trim();
       // Drop known hallucinations, and anything that lands while A.C.T.I.G. is
       // still speaking (residual echo) so it never feeds itself a command.

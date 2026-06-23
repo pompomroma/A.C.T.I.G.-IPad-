@@ -93,6 +93,7 @@ export class Scene3D {
     const mesh = new THREE.Mesh(geometryFor(node.kind), mat);
     mesh.position.set(node.x, node.y, node.z);
     mesh.scale.setScalar(node.s);
+    mesh.rotation.set(node.rx || 0, node.ry || 0, node.rz || 0);   // ||0 keeps old saves valid
     mesh.userData.id = node.id;
     this.group.add(mesh);
     this.nodes.set(node.id, { node, mesh });
@@ -125,6 +126,7 @@ export class Scene3D {
       case 'remove': return { op:'add', node:c.node };
       case 'move': return { op:'move', id:c.id, from:c.to, to:c.from };
       case 'scale': return { op:'scale', id:c.id, from:c.to, to:c.from };
+      case 'rotate': return { op:'rotate', id:c.id, from:c.to, to:c.from };
       case 'swap': return { op:'swap', a:c.a, b:c.b, pa:c.pb, pb:c.pa };
     }
   }
@@ -135,6 +137,7 @@ export class Scene3D {
       case 'remove': this._removeMesh(c.node.id); if (this.selection === c.node.id) this.selection = null; break;
       case 'move': { const r = this.nodes.get(c.id); if (r){ r.node.x=c.to.x; r.node.y=c.to.y; r.node.z=c.to.z; r.mesh.position.set(c.to.x,c.to.y,c.to.z);} break; }
       case 'scale': { const r = this.nodes.get(c.id); if (r){ r.node.s=c.to; r.mesh.scale.setScalar(c.to);} break; }
+      case 'rotate': { const r = this.nodes.get(c.id); if (r){ r.node.rx=c.to.x; r.node.ry=c.to.y; r.node.rz=c.to.z; r.mesh.rotation.set(c.to.x,c.to.y,c.to.z);} break; }
       case 'swap': {
         const ra = this.nodes.get(c.a), rb = this.nodes.get(c.b);
         if (ra && rb){ const tmp = {...ra.node}; this._setPos(ra,c.pb); this._setPos(rb,{x:tmp.x,y:tmp.y,z:tmp.z}); }
@@ -148,14 +151,36 @@ export class Scene3D {
   // ---- high-level ops (voice + touch + hands) ----
   addShape(kind, pos){
     const p = pos || { x:(Math.random()-0.5), y:(Math.random()*0.4), z:(Math.random()-0.5) };
-    const node = { id: uid(), kind, x:p.x, y:p.y, z:p.z, s:0.7, hue: 0.5 + Math.random()*0.12 };
+    const node = { id: uid(), kind, x:p.x, y:p.y, z:p.z, s:0.7, rx:0, ry:0, rz:0, hue: 0.5 + Math.random()*0.12 };
     this.apply({ op:'add', node });
   }
   multiply(kind, count){ for (let i=0;i<Math.max(1,Math.min(count,25));i++) this.addShape(kind); }
-  grow(id){ this._scale(id ?? this.selection, 1.25); }
-  shrink(id){ this._scale(id ?? this.selection, 0.8); }
-  _scale(id, f){ const r = this.nodes.get(id); if (!r) return; const to = Math.max(0.15, Math.min(r.node.s*f, 4)); this.apply({ op:'scale', id, from:r.node.s, to }); }
-  deleteSelected(id){ const tid = id ?? this.selection; const r = this.nodes.get(tid); if (r) this.apply({ op:'remove', node:{...r.node} }); }
+
+  // Resolve which object a voice/touch command targets: an explicit id, else the
+  // current selection, else the most-recently added object — so "make it bigger"
+  // works even when nothing was tapped (e.g. right after reopening the space).
+  _targetId(id){
+    if (id && this.nodes.has(id)) return id;
+    if (this.selection && this.nodes.has(this.selection)) return this.selection;
+    const ids = [...this.nodes.keys()];
+    return ids.length ? ids[ids.length-1] : null;
+  }
+
+  grow(id){ this._scale(this._targetId(id), 1.25); }
+  shrink(id){ this._scale(this._targetId(id), 0.8); }
+  _scale(id, f){ const r = this.nodes.get(id); if (!r) return; this.selection = id; const to = Math.max(0.15, Math.min(r.node.s*f, 4)); this.apply({ op:'scale', id, from:r.node.s, to }); }
+
+  // Rotate the target object by `degrees` about `axis` ('x'|'y'|'z'). Undoable.
+  rotate(axis='y', degrees=90, id){
+    const tid = this._targetId(id); const r = this.nodes.get(tid); if (!r) return;
+    this.selection = tid;
+    const from = { x:r.node.rx||0, y:r.node.ry||0, z:r.node.rz||0 };
+    const to = { ...from };
+    to[axis] = (from[axis] || 0) + degrees * Math.PI/180;
+    this.apply({ op:'rotate', id:tid, from, to });
+  }
+
+  deleteSelected(id){ const tid = this._targetId(id); const r = this.nodes.get(tid); if (r) this.apply({ op:'remove', node:{...r.node} }); }
   swapFirstTwo(){ const ids=[...this.nodes.keys()]; if (ids.length<2) return; const a=this.nodes.get(ids[0]).node, b=this.nodes.get(ids[1]).node;
     this.apply({ op:'swap', a:ids[0], b:ids[1], pa:{x:a.x,y:a.y,z:a.z}, pb:{x:b.x,y:b.y,z:b.z} }); }
   clear(){ [...this.nodes.keys()].forEach(id => { const r=this.nodes.get(id); this.apply({ op:'remove', node:{...r.node} }); }); }
@@ -221,6 +246,9 @@ export class Scene3D {
       const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
       saved.forEach(n => this._buildMesh(n));
     }catch{}
+    // Default the selection to the last object so voice edits work without a tap.
+    const ids = [...this.nodes.keys()];
+    if (ids.length) this.selection = ids[ids.length-1];
     this._highlight();
   }
   _notify(){ this.onChange?.(); }

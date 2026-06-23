@@ -67,6 +67,17 @@ export function parse(raw, ctx = {}){
 const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put','build'];
 
 function parseScene(t, inScene){
+  // Rotate is checked before shape detection so "rotate the cube" turns it rather
+  // than adding one. Word-boundary regex avoids false hits like "return".
+  if (inScene && /\b(rotate|spin|turn|tilt|roll)\b/.test(t)){
+    let axis = 'y';
+    if (/\b(up|down|forward|back(ward)?|tilt|pitch|x[- ]?axis)\b/.test(t)) axis = 'x';
+    else if (/\b(roll|z[- ]?axis)\b/.test(t)) axis = 'z';
+    const deg = extractCount(t) || 90;
+    const dir = /\b(left|counter|counter-?clockwise|anti)\b/.test(t) ? -1 : 1;
+    return { type:'scene', action:'rotate', axis, degrees: dir*deg };
+  }
+
   const kind = detectShape(t);
   if (!kind){
     // Selection edits only make sense while editing the 3D scene.

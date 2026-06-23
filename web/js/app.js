@@ -208,6 +208,7 @@ async function applyScene(i){
     case 'multiply': s.multiply(i.kind, i.count); return announce(`Created ${i.count} ${i.kind}s, sir.`);
     case 'grow': s.grow(); return announce('Enlarged, sir.');
     case 'shrink': s.shrink(); return announce('Shrunk, sir.');
+    case 'rotate': s.rotate(i.axis, i.degrees); return announce('Rotated, sir.');
     case 'delete': s.deleteSelected(); return announce('Deleted, sir.');
     case 'swap': s.swapFirstTwo(); return announce('Swapped positions, sir.');
     case 'clear': s.clear(); return announce('Scene cleared, sir.');
@@ -335,7 +336,7 @@ async function onTool(tool){
   ({
     box:()=>s.addShape('box'), sphere:()=>s.addShape('sphere'),
     cylinder:()=>s.addShape('cylinder'), cone:()=>s.addShape('cone'),
-    grow:()=>s.grow(), shrink:()=>s.shrink(), delete:()=>s.deleteSelected(),
+    grow:()=>s.grow(), shrink:()=>s.shrink(), rotate:()=>s.rotate(), delete:()=>s.deleteSelected(),
     undo:()=>s.undo(), redo:()=>s.redo(),
   })[tool]?.();
 }

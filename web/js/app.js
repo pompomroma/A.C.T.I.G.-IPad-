@@ -72,8 +72,13 @@ function retryModel(){
 function toggleLanguage(){
   toggleLang();
   applyI18n();
+  voice.stopSpeaking();                       // don't keep speaking the old language
   setStatus(state.mode === 'dormant' ? t('st.dormant') : t('st.listening'));
-  if (state.mode !== 'dormant' && !state.userMicMuted){ voice.stopListening(); startListening(); }
+  // Whisper reads the language per utterance — no mic restart needed (fluent on
+  // iOS). Only Web Speech must restart to change its recognition language.
+  if (state.mode !== 'dormant' && !state.userMicMuted && voice.usesWebSpeech){
+    voice.stopListening(); startListening();
+  }
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —

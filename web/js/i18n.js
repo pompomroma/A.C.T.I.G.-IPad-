@@ -4,7 +4,8 @@
 // current language from here.
 
 const LANG_KEY = 'actig.lang';
-let current = localStorage.getItem(LANG_KEY) || 'ko';
+// Start in English; the toggle switches to Korean and the choice is remembered.
+let current = localStorage.getItem(LANG_KEY) || 'en';
 
 export function getLang(){ return current; }
 export function setLang(l){ current = (l === 'en') ? 'en' : 'ko'; try{ localStorage.setItem(LANG_KEY, current); }catch{} }

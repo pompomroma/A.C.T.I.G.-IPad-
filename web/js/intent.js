@@ -3,17 +3,22 @@
 // IntentRouter. Returns { type, ... } objects consumed by app.js.
 
 const SHAPE_WORDS = {
-  cube: 'box', box: 'box', block: 'box', '정육면체':'box', '큐브':'box', '박스':'box', '상자':'box',
-  sphere: 'sphere', ball: 'sphere', orb: 'sphere', '구체':'sphere', '공':'sphere',
-  cylinder: 'cylinder', tube: 'cylinder', can: 'cylinder', '원기둥':'cylinder', '실린더':'cylinder',
-  cone: 'cone', '원뿔':'cone', '콘':'cone',
+  cube: 'box', box: 'box', block: 'box', brick: 'box', square: 'box', rectangle: 'box', cuboid: 'box',
+  '정육면체':'box', '큐브':'box', '박스':'box', '상자':'box', '네모':'box',
+  sphere: 'sphere', ball: 'sphere', orb: 'sphere', globe: 'sphere', circle: 'sphere',
+  '구체':'sphere', '공':'sphere', '동그라미':'sphere',
+  cylinder: 'cylinder', tube: 'cylinder', can: 'cylinder', pipe: 'cylinder', column: 'cylinder',
+  '원기둥':'cylinder', '실린더':'cylinder',
+  cone: 'cone', '원뿔':'cone', '콘':'cone', '세모':'cone',
   pyramid: 'pyramid', '피라미드':'pyramid',
-  torus: 'torus', donut: 'torus', ring: 'torus', '도넛':'torus', '토러스':'torus', '고리':'torus',
-  plane: 'plane', panel: 'plane', '평면':'plane', '판':'plane'
+  torus: 'torus', donut: 'torus', doughnut: 'torus', ring: 'torus', loop: 'torus',
+  '도넛':'torus', '토러스':'torus', '고리':'torus',
+  plane: 'plane', panel: 'plane', slab: 'plane', sheet: 'plane', '평면':'plane', '판':'plane'
 };
 
 const NUM_WORDS = {
   two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10,
+  eleven:11, twelve:12, couple:2, few:3, several:4,
   '둘':2, '셋':3, '넷':4, '다섯':5, '여섯':6, '일곱':7, '여덟':8, '아홉':9, '열':10
 };
 
@@ -83,7 +88,12 @@ function extractCount(t){
 // Normalize transcripts/typed text: lowercase, NFC, strip punctuation, collapse
 // spaces — so matching is robust to ASR/text noise.
 export function norm(raw){
-  return (raw || '').toLowerCase().normalize('NFC').replace(/[.,!?;:~"'’]/g, ' ').replace(/\s+/g, ' ').trim();
+  let s = (raw || '').toLowerCase().normalize('NFC').replace(/[.,!?;:~"'’]/g, ' ');
+  // Strip polite/filler wrappers so the core command surfaces ("could you please
+  // rotate the cube" → "rotate the cube").
+  s = s.replace(/\b(could you|can you|would you|will you|can we|let'?s|please|kindly|i want to|i wanna|i would like to|i'?d like to|i need you to|go ahead and|for me|right now|just|now)\b/g, ' ');
+  s = s.replace(/(해\s*줄래|해\s*주세요|해\s*줘|좀)/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 export function parse(raw, ctx = {}){
@@ -94,20 +104,20 @@ export function parse(raw, ctx = {}){
   if (has(t,'wake up actig','wake up act','wakeup actig','액티그 일어나','액티그 깨어나','일어나 액티그','깨어나')) return { type:'wake' };
   if (has(t,'shut down all systems','shutdown all systems','시스템 종료','모든 시스템 종료','전부 꺼','다 꺼')) return { type:'shutdown' };
 
-  if (has(t,'3d project','3d space','bring up the project','open the project','3d 공간','모델링','프로젝트 열','3d 열')
-      || fuzzyHas(t,'modeling','modelling')
-      || (fuzzyHas(t,'open','bring') && /\b3\s?d\b|3차원/.test(t)))
+  if (has(t,'3d project','3d space','3d mode','3d view','modelling space','modeling space','workspace','bring up the project','open the project','3d 공간','모델링','프로젝트 열','3d 열','작업 공간','3d 모드')
+      || fuzzyHas(t,'modeling','modelling','workspace')
+      || ((fuzzyHas(t,'open','bring','enter','start','launch','show') || /\b(let'?s|wanna|want to)\b/.test(t)) && /\b3\s?d\b|3차원/.test(t)))
     return { type:'openScene' };
-  if (has(t,'go back to chat','close project','close the project','exit 3d','대화로','프로젝트 닫','3d 닫')) return { type:'openConversation' };
+  if (has(t,'go back to chat','back to chat','close project','close the project','leave 3d','exit 3d','대화로','프로젝트 닫','3d 닫','채팅으로')) return { type:'openConversation' };
 
-  if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','use my fingers','카메라 제어 켜','손 제어 켜','손가락 제어'))
+  if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','control with my fingers','use my fingers','use my hand','hand control','finger control','카메라 제어 켜','손 제어 켜','손가락 제어','손으로 제어'))
     return { type:'enableCameraControl' };
-  if (has(t,'disable camera control','stop camera control','stop hand control','stop finger control','카메라 제어 꺼','손 제어 꺼'))
+  if (has(t,'disable camera control','stop camera control','stop hand control','stop finger control','turn off hand','카메라 제어 꺼','손 제어 꺼'))
     return { type:'disableCameraControl' };
-  if (has(t,'open camera','camera mode','카메라 열','카메라 모드')) return { type:'openCamera' };
+  if (has(t,'open camera','camera mode','show camera','use the camera','카메라 열','카메라 모드','카메라 보여')) return { type:'openCamera' };
 
-  if (has(t,'what is this','what am i holding','이거 뭐','이게 뭐','스캔','분석')
-      || fuzzyHas(t,'scan','analyze','analyse','identify'))
+  if (has(t,'what is this','what am i holding','what do you see','what is that','이거 뭐','이게 뭐','스캔','분석','인식','이게 뭐야','뭐야 이거')
+      || fuzzyHas(t,'scan','analyze','analyse','identify','recognize','recognise'))
     return { type:'analyze', question: raw };
 
   // "undo"/"redo" as explicit words are safe anywhere; the looser synonyms only
@@ -118,7 +128,7 @@ export function parse(raw, ctx = {}){
   if (inScene && has(t,'do it again','다시 해')) return { type:'redo' };
 
   // Export / download the model as a file.
-  if (fuzzyHas(t,'export','download') || has(t,'save the model','save model','내보내기','다운로드','모델 저장','파일로 저장'))
+  if (fuzzyHas(t,'export','download') || has(t,'save the model','save model','save it as a file','save as file','내보내기','내보내','다운로드','모델 저장','파일로 저장','파일로 내보'))
     return { type:'export' };
 
   // Generative modelling: "build/model a <thing>" composes primitives.
@@ -155,51 +165,59 @@ function cleanBuildTarget(raw){
   return s.replace(/\s+/g, ' ').trim();
 }
 
-const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put','build','추가','만들','생성','놓','넣'];
+const ADD_VERBS = ['add','create','make','spawn','place','call','give me','put','build','insert','drop',
+  '추가','만들','생성','놓','넣','둬','올려'];
 
 function parseScene(t, inScene){
-  // Rotate is checked before shape detection so "rotate the cube" turns it rather
-  // than adding one. Word-boundary regex avoids false hits like "return".
-  if (inScene && (fuzzyHas(t,'rotate','spin','turn','tilt','roll') || has(t,'회전','돌려','돌리','기울'))){
+  const kind = detectShape(t);
+  // A transform command targets an object when we're in the 3D space OR the text
+  // names a shape / object ("rotate the cube", "make the sphere bigger") — so
+  // edit commands work even from the chat view (route auto-opens the 3D space).
+  // Bare-pronoun cases ("rotate it") stay gated to the scene / the AI fallback.
+  const objRef = inScene || !!kind || /\b(object|model|shape|thing|figure|selection)\b/.test(t)
+    || has(t,'물체','모델','도형','오브젝트','선택');
+
+  // Rotate.
+  if (objRef && (fuzzyHas(t,'rotate','spin','turn','tilt','roll','flip','twist','pivot') || has(t,'회전','돌려','돌리','기울','뒤집'))){
     let axis = 'y';
-    if (/\b(up|down|forward|back(ward)?|tilt|pitch|x[- ]?axis)\b/.test(t) || has(t,'위','아래','기울')) axis = 'x';
+    if (/\b(up|down|forward|back(ward)?|tilt|pitch|flip)\b/.test(t) || has(t,'위','아래','기울','뒤집')) axis = 'x';
     else if (/\b(roll|z[- ]?axis)\b/.test(t) || has(t,'롤','굴려')) axis = 'z';
     const deg = extractCount(t) || 90;
-    const dir = (/\b(left|counter|counter-?clockwise|anti)\b/.test(t) || has(t,'왼쪽','반시계')) ? -1 : 1;
+    const dir = (/\b(left|counter|counter-?clockwise|anti|ccw)\b/.test(t) || has(t,'왼쪽','반시계')) ? -1 : 1;
     return { type:'scene', action:'rotate', axis, degrees: dir*deg };
   }
 
-  // Move is checked before shape detection so "move the cube left" moves it.
-  if (inScene && (fuzzyHas(t,'move','shift','slide','nudge','drag') || has(t,'이동','옮겨','움직','밀'))){
-    if (has(t,'center','middle','origin','가운데','중앙','원점')) return { type:'scene', action:'moveTo', x:0, y:0, z:0 };
+  // Move.
+  if (objRef && (fuzzyHas(t,'move','shift','slide','nudge','drag','push','pull','relocate','reposition') || has(t,'이동','옮겨','움직','밀','당겨'))){
+    if (has(t,'center','middle','origin','가운데','중앙','원점','중심')) return { type:'scene', action:'moveTo', x:0, y:0, z:0 };
     const step = 0.6; let dx=0, dy=0, dz=0;
     if (/\bleft\b/.test(t)  || has(t,'왼쪽','왼')) dx -= step;
     if (/\bright\b/.test(t) || has(t,'오른쪽','오른')) dx += step;
-    if (/\bup\b/.test(t)    || has(t,'위로','위쪽')) dy += step;
+    if (/\bup\b/.test(t)    || has(t,'위로','위쪽','위')) dy += step;
     if (/\bdown\b/.test(t)  || has(t,'아래','밑')) dy -= step;
     if (/\bforward\b/.test(t) || has(t,'앞')) dz -= step;
     if (/\bback(ward)?\b/.test(t) || has(t,'뒤')) dz += step;
     if (dx || dy || dz) return { type:'scene', action:'move', dx, dy, dz };
   }
 
-  const kind = detectShape(t);
-  if (!kind){
-    // Selection edits only make sense while editing the 3D scene.
-    if (!inScene) return null;
-    if (fuzzyHas(t,'bigger','grow','extend','enlarge') || has(t,'scale up','크게','키워','확대','커')) return { type:'scene', action:'grow' };
-    if (fuzzyHas(t,'smaller','shrink') || has(t,'scale down','작게','줄여','축소')) return { type:'scene', action:'shrink' };
-    if (fuzzyHas(t,'delete','remove') || has(t,'삭제','지워','없애')) return { type:'scene', action:'delete' };
+  // Size / delete / swap / clear — checked BEFORE creation so "make the cube
+  // bigger" grows it instead of adding a new cube.
+  if (objRef){
+    if (fuzzyHas(t,'bigger','grow','enlarge','expand','larger') || has(t,'scale up','크게','키워','확대','커','크게 해')) return { type:'scene', action:'grow' };
+    if (fuzzyHas(t,'smaller','shrink','reduce','tinier') || has(t,'scale down','작게','줄여','축소','작게 해')) return { type:'scene', action:'shrink' };
+    if (fuzzyHas(t,'delete','remove','erase','trash') || has(t,'get rid','삭제','지워','없애','치워','제거')) return { type:'scene', action:'delete' };
     if (fuzzyHas(t,'swap') || has(t,'switch places','바꿔','교체')) return { type:'scene', action:'swap' };
-    if (has(t,'clear the scene','clear scene','remove everything','start over','전부 삭제','다 지워','초기화')) return { type:'scene', action:'clear' };
-    return null;
+    if (fuzzyHas(t,'clear','wipe','reset','empty') || has(t,'clear the scene','remove everything','start over','전부 삭제','다 지워','초기화','비워')) return { type:'scene', action:'clear' };
   }
-  // A shape word only triggers creation with an explicit verb, OR when already in
-  // the 3D space — so "I had a ball yesterday" stays a normal sentence.
-  const explicit = has(t, ...ADD_VERBS) || fuzzyHas(t,'add','create','make','build','spawn','place','put');
+
+  // Creation needs a shape AND (an explicit verb OR already in the 3D space) — so
+  // "I had a ball yesterday" stays a normal sentence.
+  if (!kind) return null;
+  const explicit = has(t, ...ADD_VERBS) || fuzzyHas(t,'add','create','make','build','spawn','place','put','insert','drop');
   if (!explicit && !inScene) return null;
 
   const n = extractCount(t);
-  if (n && (fuzzyHas(t,'multiply','copies','duplicate') || has(t,'times','복제','중복','곱'))) return { type:'scene', action:'multiply', kind, count:n };
+  if (n && (fuzzyHas(t,'multiply','copies','duplicate','clone') || has(t,'times','복제','중복','곱','개'))) return { type:'scene', action:'multiply', kind, count:n };
   return { type:'scene', action:'add', kind };
 }
 
@@ -208,8 +226,9 @@ function parseScene(t, inScene){
 export function looksCommandish(raw, inScene){
   const t = norm(raw);
   if (inScene) return true;
-  return /\b(add|make|create|build|model|design|move|rotate|spin|turn|scale|grow|shrink|bigger|smaller|delete|remove|clear|open|close|scan|export|download|undo|redo|enable|disable)\b/.test(t)
-    || has(t,'추가','만들','생성','이동','옮겨','회전','돌려','확대','축소','삭제','지워','열어','닫','스캔','내보내기','다운로드','모델링','지어');
+  return /\b(add|make|create|build|model|design|spawn|place|put|insert|drop|move|shift|slide|push|pull|drag|rotate|spin|turn|tilt|roll|flip|scale|grow|shrink|bigger|smaller|enlarge|reduce|expand|delete|remove|erase|clear|wipe|reset|swap|open|close|exit|enter|launch|scan|identify|recognize|analyze|analyse|export|download|save|undo|redo|enable|disable)\b/.test(t)
+    || /\b(it|that|this|them|the (cube|box|sphere|ball|cylinder|cone|pyramid|torus|object|model|shape|thing))\b/.test(t)
+    || has(t,'추가','만들','생성','이동','옮겨','움직','회전','돌려','확대','축소','크게','작게','삭제','지워','없애','열어','닫','스캔','분석','인식','내보내','다운로드','모델링','지어','회전','정렬','비워','초기화');
 }
 
 // Validate the LLM classifier's JSON into the app's intent shape. Returns a clean

@@ -173,14 +173,28 @@ export class Voice {
     this._recognition = r;
   }
 
+  // Load the speech-recognition model, preferring the more accurate multilingual
+  // "base" model (markedly better Korean than "tiny") and falling back if it
+  // can't load on this device/network. Cached by transformers.js after first use.
+  async _loadASR(){
+    const { pipeline } = await import('@huggingface/transformers');
+    const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
+    const attempts = [
+      ['Xenova/whisper-base', device],
+      ['Xenova/whisper-tiny', device],
+      ['Xenova/whisper-tiny', 'wasm'],
+    ];
+    let lastErr;
+    for (const [model, dev] of attempts){
+      try{ return await pipeline('automatic-speech-recognition', model, { device: dev }); }
+      catch(e){ lastErr = e; console.warn('ASR load failed:', model, dev, e?.message); }
+    }
+    throw lastErr || new Error('no ASR model could load');
+  }
+
   async _startWhisper(){
     try{
-      if (!this._asr){
-        const { pipeline } = await import('@huggingface/transformers');
-        const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
-        // Multilingual tiny model so both Korean and English are recognised.
-        this._asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { device });
-      }
+      if (!this._asr) this._asr = await this._loadASR();
       // echoCancellation stops the mic from hearing A.C.T.I.G.'s own TTS voice
       // (which otherwise gets transcribed back into phantom commands); noise
       // suppression + auto gain reduce false triggers from background noise.
@@ -271,13 +285,34 @@ export class Voice {
     finally{ if (this.listening) this.onStatus?.('listening'); }
   }
 
+  // Resample to 16 kHz mono with linear interpolation (cleaner than nearest-
+  // neighbour → better recognition), then gently lift quiet speech.
   _resampleTo16k(audioBuffer){
     const src = audioBuffer.getChannelData(0);
     const ratio = audioBuffer.sampleRate / 16000;
+    if (ratio === 1) return this._normalizePeak(Float32Array.from(src));
     const len = Math.floor(src.length / ratio);
     const out = new Float32Array(len);
-    for (let i=0;i<len;i++) out[i] = src[Math.floor(i*ratio)];
-    return out;
+    for (let i = 0; i < len; i++){
+      const pos = i * ratio;
+      const i0 = Math.floor(pos);
+      const i1 = Math.min(i0 + 1, src.length - 1);
+      const frac = pos - i0;
+      out[i] = src[i0] * (1 - frac) + src[i1] * frac;
+    }
+    return this._normalizePeak(out);
+  }
+
+  // Boost quiet captures toward a usable level (helps soft Korean speech) without
+  // over-amplifying noise: only when the peak is low, and with a capped gain.
+  _normalizePeak(buf){
+    let peak = 0;
+    for (let i = 0; i < buf.length; i++){ const a = Math.abs(buf[i]); if (a > peak) peak = a; }
+    if (peak > 1e-3 && peak < 0.5){
+      const gain = Math.min(4, 0.9 / peak);
+      for (let i = 0; i < buf.length; i++) buf[i] *= gain;
+    }
+    return buf;
   }
 }
 

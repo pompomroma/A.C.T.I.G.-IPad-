@@ -18,8 +18,10 @@ const PHANTOM_PHRASES = new Set([
   'see you next time', 'bye bye', 'you you', 'i', 'the', 'a', 'so', 'uh', 'um',
   'ah', 'oh', 'hmm', 'mm', 'mhm', 'silence', 'blank_audio',
 ]);
+// Keep letters (incl. Hangul) and numbers — \w is ASCII-only and would erase
+// Korean entirely, making every Korean transcript look like a phantom.
 const normalizeTranscript = (t) =>
-  (t || '').toLowerCase().replace(/[^\w\s']/g, ' ').replace(/\s+/g, ' ').trim();
+  (t || '').toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, ' ').replace(/\s+/g, ' ').trim();
 
 // True when a transcript is almost certainly a hallucination, not real speech.
 function isPhantomTranscript(text){
@@ -28,6 +30,7 @@ function isPhantomTranscript(text){
   if (PHANTOM_PHRASES.has(n)) return true;
   if (/^(you ?)+$/.test(n) || /^(thank you ?)+$/.test(n)) return true;  // repeats
   if (/(subscribe|for watching|amara\.org|subtitles? by)/.test(n)) return true;
+  if (/(시청해|구독|감사합니다 다음)/.test(n)) return true;          // common Korean credits
   return false;
 }
 
@@ -51,7 +54,10 @@ export class Voice {
     this._chunks = [];
     this._capturing = false;
     this._lastVoice = 0;
-    this._ttsStartedAt = 0;
+    // Half-duplex: the mic ignores input until this timestamp, so A.C.T.I.G. never
+    // transcribes its own TTS. Time-based so it can never get stuck muted.
+    this._micResumeAt = 0;
+    this._pendingSpeak = 0;
     this._useWebSpeech = ('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window);
     this._recognition = null;
 
@@ -72,7 +78,8 @@ export class Voice {
   // ---- TTS ----
   speak(text){
     if (this.muted || !this.tts || !text.trim()) return;
-    const u = new SpeechSynthesisUtterance(text.trim());
+    const clean = text.trim();
+    const u = new SpeechSynthesisUtterance(clean);
     // Korean voice when the current language is Korean (or the text is Hangul).
     const ko = getLang() === 'ko' || hasHangul(text);
     const v = ko ? (this.voiceKo || this.voiceEn) : (this.voiceEn || this.voiceKo);
@@ -80,8 +87,20 @@ export class Voice {
     u.lang = ko ? 'ko-KR' : (this.voiceEn?.lang || 'en-GB');
     u.rate = 1.04;          // brisk, attentive
     u.pitch = 0.9;          // slightly lowered, mechanical
-    u.onstart = () => { this.speaking = true; this._ttsStartedAt = performance.now(); };
-    u.onend = () => { if (!this.tts.speaking) this.speaking = false; };
+
+    // Mute the mic for the estimated duration (+cooldown). onend shortens this when
+    // it fires; the estimate is the safety cap for when it doesn't (iOS Safari).
+    const estMs = Math.min(12000, Math.max(1000, clean.length * 70));
+    this._micResumeAt = Math.max(this._micResumeAt, performance.now() + estMs + 400);
+    this._pendingSpeak++;
+    this.speaking = true;
+    const done = () => {
+      this._pendingSpeak = Math.max(0, this._pendingSpeak - 1);
+      if (this._pendingSpeak === 0){ this.speaking = false; this._micResumeAt = performance.now() + 400; }
+    };
+    u.onstart = () => { this.speaking = true; };
+    u.onend = done;
+    u.onerror = done;
     this.tts.speak(u);
   }
 
@@ -96,8 +115,14 @@ export class Voice {
   stopSpeaking(){
     this._buffer = '';
     if (this.tts) this.tts.cancel();
+    this._pendingSpeak = 0;
     this.speaking = false;
+    this._micResumeAt = performance.now() + 250;   // brief settle, then listen again
   }
+
+  // Whisper reads the language per utterance, so switching language needs no mic
+  // restart; only Web Speech does. Exposed so app.js can toggle fluently.
+  get usesWebSpeech(){ return this._useWebSpeech; }
 
   // ---- STT ----
   // `onStatus` reports 'listening' | 'transcribing' | 'unavailable' so the UI can
@@ -138,8 +163,8 @@ export class Voice {
       if (interim) this.onPartial?.(interim);
       if (final){
         const t = final.trim();
-        // Ignore hallucinations and the assistant's own voice echoing back.
-        if (t && !isPhantomTranscript(t) && !this.speaking) this.onFinal?.(t);
+        // Ignore hallucinations and anything heard while A.C.T.I.G. is speaking.
+        if (t && !isPhantomTranscript(t) && performance.now() >= this._micResumeAt) this.onFinal?.(t);
         sawSpeech = false;
       }
     };
@@ -168,23 +193,30 @@ export class Voice {
       analyser.fftSize = 1024;
       source.connect(analyser);
       const data = new Float32Array(analyser.fftSize);
+      let voiceFrames = 0;
 
       const loop = () => {
         if (!this.listening) return;
+        const now = performance.now();
+        // Half-duplex: while (or just after) A.C.T.I.G. speaks, ignore the mic so
+        // it never hears and replies to its own voice.
+        if (now < this._micResumeAt){
+          if (this._capturing) this._endSegment();
+          voiceFrames = 0;
+          requestAnimationFrame(loop); return;
+        }
+
         analyser.getFloatTimeDomainData(data);
         let sum = 0; for (let i=0;i<data.length;i++) sum += data[i]*data[i];
         const rms = Math.sqrt(sum / data.length);
 
-        // Use a higher threshold while ACTIG is talking to avoid echo barge-in.
-        const sinceTTS = performance.now() - this._ttsStartedAt;
-        const thresh = (this.speaking && sinceTTS > 400) ? 0.05 : 0.02;
-        const now = performance.now();
-
-        if (rms > thresh){
-          this._lastVoice = now;
-          if (!this._capturing){ this._beginSegment(); this.onSpeechStart?.(); }
-        } else if (this._capturing && now - this._lastVoice > 700){
-          this._endSegment();
+        if (rms > 0.018){
+          voiceFrames++; this._lastVoice = now;
+          // Require two voiced frames to start — rejects single-frame clicks/pops.
+          if (!this._capturing && voiceFrames >= 2){ this._beginSegment(); this.onSpeechStart?.(); }
+        } else {
+          voiceFrames = 0;
+          if (this._capturing && now - this._lastVoice > 800) this._endSegment();
         }
         requestAnimationFrame(loop);
       };
@@ -215,6 +247,7 @@ export class Voice {
 
   async _transcribe(){
     if (!this._chunks.length || !this._asr || !this.listening) return;
+    if (performance.now() < this._micResumeAt) return;   // captured as TTS started
     try{
       this.onStatus?.('transcribing');
       const blob = new Blob(this._chunks, { type: this._recorder.mimeType || 'audio/webm' });
@@ -230,9 +263,8 @@ export class Voice {
 
       const out = await this._asr(pcm, { language: getLang() === 'ko' ? 'korean' : 'english', task: 'transcribe' });
       const text = (out?.text || '').trim();
-      // Drop known hallucinations, and anything that lands while A.C.T.I.G. is
-      // still speaking (residual echo) so it never feeds itself a command.
-      if (text && !isPhantomTranscript(text) && !this.speaking){
+      // Drop known hallucinations, and anything heard while A.C.T.I.G. is speaking.
+      if (text && !isPhantomTranscript(text) && performance.now() >= this._micResumeAt){
         this.onPartial?.(text); this.onFinal?.(text);
       }
     }catch(e){ console.warn('transcribe failed', e); }

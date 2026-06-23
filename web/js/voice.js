@@ -3,6 +3,30 @@
 // run on-device Whisper (transformers.js) with energy-based voice activity
 // detection. On browsers that expose webkitSpeechRecognition we use it directly.
 
+// Whisper (esp. whisper-tiny) emits these "phantom" phrases on silence or noise
+// when nobody actually spoke — the classic video-credits/filler hallucinations.
+// We drop any transcript that is one of these (so the assistant never acts on
+// input the user didn't give). Deliberately excludes real short answers like
+// "yes"/"no"/"okay" so genuine replies still get through.
+const PHANTOM_PHRASES = new Set([
+  'you', 'thank you', 'thanks', 'thank you very much', 'thank you so much',
+  'thanks for watching', 'thank you for watching', 'please subscribe', 'subscribe',
+  'see you next time', 'bye bye', 'you you', 'i', 'the', 'a', 'so', 'uh', 'um',
+  'ah', 'oh', 'hmm', 'mm', 'mhm', 'silence', 'blank_audio',
+]);
+const normalizeTranscript = (t) =>
+  (t || '').toLowerCase().replace(/[^\w\s']/g, ' ').replace(/\s+/g, ' ').trim();
+
+// True when a transcript is almost certainly a hallucination, not real speech.
+function isPhantomTranscript(text){
+  const n = normalizeTranscript(text);
+  if (n.length < 2) return true;                                  // empty / punctuation
+  if (PHANTOM_PHRASES.has(n)) return true;
+  if (/^(you ?)+$/.test(n) || /^(thank you ?)+$/.test(n)) return true;  // repeats
+  if (/(subscribe|for watching|amara\.org|subtitles? by)/.test(n)) return true;
+  return false;
+}
+
 export class Voice {
   constructor(){
     this.tts = window.speechSynthesis;
@@ -101,7 +125,12 @@ export class Voice {
       }
       if ((interim || final) && !sawSpeech){ sawSpeech = true; this.onSpeechStart?.(); }
       if (interim) this.onPartial?.(interim);
-      if (final){ this.onFinal?.(final.trim()); sawSpeech = false; }
+      if (final){
+        const t = final.trim();
+        // Ignore hallucinations and the assistant's own voice echoing back.
+        if (t && !isPhantomTranscript(t) && !this.speaking) this.onFinal?.(t);
+        sawSpeech = false;
+      }
     };
     r.onend = () => { if (this.listening){ try{ r.start(); }catch{} } };
     try{ r.start(); }catch{}
@@ -115,7 +144,12 @@ export class Voice {
         const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
         this._asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', { device });
       }
-      this._stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // echoCancellation stops the mic from hearing A.C.T.I.G.'s own TTS voice
+      // (which otherwise gets transcribed back into phantom commands); noise
+      // suppression + auto gain reduce false triggers from background noise.
+      this._stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       this._ac = new (window.AudioContext || window.webkitAudioContext)();
       const source = this._ac.createMediaStreamSource(this._stream);
       const analyser = this._ac.createAnalyser();
@@ -168,16 +202,27 @@ export class Voice {
   }
 
   async _transcribe(){
-    if (!this._chunks.length || !this._asr) return;
+    if (!this._chunks.length || !this._asr || !this.listening) return;
     try{
       this.onStatus?.('transcribing');
       const blob = new Blob(this._chunks, { type: this._recorder.mimeType || 'audio/webm' });
       const buf = await blob.arrayBuffer();
       const decoded = await this._ac.decodeAudioData(buf);
+
+      // Reject too-short blips and near-silent captures BEFORE asking Whisper —
+      // these are the segments that produce phantom transcriptions.
       const pcm = this._resampleTo16k(decoded);
+      let sum = 0; for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+      const rms = Math.sqrt(sum / Math.max(1, pcm.length));
+      if (decoded.duration < 0.4 || rms < 0.01) return;            // not real speech
+
       const out = await this._asr(pcm);
       const text = (out?.text || '').trim();
-      if (text){ this.onPartial?.(text); this.onFinal?.(text); }
+      // Drop known hallucinations, and anything that lands while A.C.T.I.G. is
+      // still speaking (residual echo) so it never feeds itself a command.
+      if (text && !isPhantomTranscript(text) && !this.speaking){
+        this.onPartial?.(text); this.onFinal?.(text);
+      }
     }catch(e){ console.warn('transcribe failed', e); }
     finally{ if (this.listening) this.onStatus?.('listening'); }
   }

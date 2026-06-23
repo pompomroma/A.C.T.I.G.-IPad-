@@ -7,7 +7,7 @@
 // time they're needed, so a slow/blocked CDN can never stop the core app (chat,
 // voice, UI) from working.
 
-import { Brain } from './llm.js';
+import { Brain, estimateMaxTokens } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
 import { parse } from './intent.js';
 
@@ -26,7 +26,7 @@ const el = {
 const state = {
   mode: 'dormant', workspace: 'conversation',
   userMicMuted: false, aiVoiceMuted: false, cameraControl: false,
-  messages: [], liveEl: null, voiceNoticeShown: false,
+  messages: [], liveEl: null, voiceNoticeShown: false, warmNoteShown: false,
 };
 
 let brain = new Brain();
@@ -51,7 +51,8 @@ function boot(){
 // Loads (or reloads) the language model in the background.
 function loadModel(){
   modelReadyPromise = brain.load((p) => setStatus(`loading model… ${Math.round(p * 100)}%`))
-    .then(() => setStatus(brain.usingStub ? 'lite mode · tap to retry full model' : `ready · ${brain.displayName}`))
+    .then(() => setStatus(brain.usingStub ? 'lite mode · tap to retry full model'
+                                          : `full model ready · ${brain.displayName}`))
     .catch((e) => { console.warn(e); setStatus('ready (offline stub)'); });
   return modelReadyPromise;
 }
@@ -220,30 +221,45 @@ async function applyScene(i){
 async function generateReply(override){
   brain.abort();
   setMode('responding'); setStatus('thinking…');
-  // The model loads in the background — wait for it on the first request.
-  if (!brain.ready){ setStatus('warming up the model…'); await modelReadyPromise; }
+
+  // Never block on the model download: if the full model isn't ready yet, answer
+  // instantly with the lite brain and let the real model take over on later turns.
+  const full = brain.ready && !brain.usingStub;
+  const loadingFullModel = !brain.ready;   // WebGPU model still warming up
+
   // Snapshot recent history BEFORE adding the empty assistant bubble (keeps
   // context + memory bounded on mobile and avoids sending an empty turn).
-  const history = state.messages.filter(m => m.role !== 'system').slice(-12);
+  const history = state.messages.filter(m => m.role !== 'system').slice(-8);
   if (override){
     if (history.length && history[history.length - 1].role === 'user')
       history[history.length - 1] = { role: 'user', content: override };
     else
       history.push({ role: 'user', content: override });
   }
+
+  // Adaptive length: short budget for simple chat, larger for complex asks.
+  const lastUser = [...state.messages].reverse().find(m => m.role === 'user');
+  const maxTokens = estimateMaxTokens(lastUser?.content || override || '');
+
   const bubble = addMessage('assistant', '');
   try{
-    let spoke = false;
-    for await (const tok of brain.reply(history)){
+    for await (const tok of (full ? brain.reply(history, { maxTokens }) : brain.replyLite(history))){
       bubble.el.textContent += tok;
       bubble.content += tok;
       scrollTranscript();
-      if (!state.aiVoiceMuted){ voice.enqueueToken(tok); spoke = true; }
+      if (!state.aiVoiceMuted) voice.enqueueToken(tok);
       if (el.status.textContent === 'thinking…') setStatus('responding');
     }
     if (!state.aiVoiceMuted) voice.flush();
     if (!bubble.content.trim()) bubble.el.textContent = '(no response — see status)';
-    setMode('awake'); setStatus('listening');
+    // Let the user know — once — that this was a quick answer while the full
+    // model is still loading (not shown when the device is permanently lite).
+    if (loadingFullModel && !state.warmNoteShown){
+      state.warmNoteShown = true;
+      bubble.el.textContent += '  (quick reply, sir — my full model is still warming up.)';
+    }
+    setMode('awake');
+    setStatus(brain.ready ? 'listening' : 'listening · full model loading…');
   }catch(e){
     bubble.el.textContent += ` [error: ${e.message}]`;
     setMode('awake'); setStatus('listening');

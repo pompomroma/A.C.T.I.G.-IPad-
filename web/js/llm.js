@@ -97,6 +97,20 @@ function stubReply(t){
   return `Noted, sir — “${t.length > 60 ? t.slice(0, 60) + '…' : t}”. I am in lite mode here so my free conversation is limited, but commands like “bring up the 3D project”, “add a cube”, “scan this” and the camera controls all work, and I can handle the time, date and quick maths.`;
 }
 
+// Estimate a generation token budget from the user's request so simple chat
+// stays snappy while genuinely complex asks get room to answer fully. Short
+// greetings/commands get a small cap (fast first reply + quick TTS); long or
+// reasoning-heavy prompts get a large one.
+export function estimateMaxTokens(text){
+  const t = (text || '').toLowerCase();
+  const words = t.trim().split(/\s+/).filter(Boolean).length;
+  const complex = /\b(explain|detail|elaborate|why|how (do|does|to|can)|step by step|in depth|compare|difference|list|write|code|program|essay|story|plan|describe|analy|summar|reasons?|pros and cons)\b/.test(t);
+  if (complex || words >= 40) return 768;
+  if (words >= 16) return 384;
+  if (words <= 6) return 128;
+  return 220;
+}
+
 export class Brain {
   constructor(){
     this.engine = null;
@@ -161,31 +175,37 @@ export class Brain {
     this.displayName = 'offline stub (' + reason + ')';
   }
 
-  /** Async generator yielding token deltas. Respects abort(). */
-  async *reply(messages){
+  /** Async generator yielding token deltas. Respects abort().
+   *  `opts.maxTokens` bounds the reply length (adaptive — set by the caller). */
+  async *reply(messages, opts = {}){
+    if (this.usingStub){ yield* this.replyLite(messages); return; }
+
     this._abort = new AbortController();
     const signal = this._abort.signal;
-
-    if (this.usingStub){
-      const last = ([...messages].reverse().find((m) => m.role === 'user')?.content || '').toLowerCase();
-      const text = stubReply(last);
-      for (const w of text.split(' ')){
-        if (signal.aborted) return;
-        await new Promise((r) => setTimeout(r, 35));
-        yield w + ' ';
-      }
-      return;
-    }
 
     const chat = [{ role:'system', content: SYSTEM_PROMPT },
                   ...messages.map((m) => ({ role: m.role, content: m.content }))];
     const stream = await this.engine.chat.completions.create({
-      messages: chat, stream: true, temperature: 0.7, top_p: 0.9
+      messages: chat, stream: true, temperature: 0.7, top_p: 0.9,
+      max_tokens: opts.maxTokens || 384,
     });
     for await (const chunk of stream){
       if (signal.aborted){ try{ await this.engine.interruptGenerate(); }catch{} return; }
       const delta = chunk.choices?.[0]?.delta?.content;
       if (delta) yield delta;
+    }
+  }
+
+  /** Instant lite reply (rule-based). Always available — used both as the no-GPU
+   *  fallback and to answer immediately while the full model is still loading. */
+  async *replyLite(messages){
+    this._abort = new AbortController();
+    const signal = this._abort.signal;
+    const last = ([...messages].reverse().find((m) => m.role === 'user')?.content || '').toLowerCase();
+    for (const w of stubReply(last).split(' ')){
+      if (signal.aborted) return;
+      await new Promise((r) => setTimeout(r, 12));
+      yield w + ' ';
     }
   }
 

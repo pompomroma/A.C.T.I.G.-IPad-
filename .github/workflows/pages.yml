@@ -7,12 +7,13 @@ name: Deploy A.C.T.I.G. PWA to GitHub Pages
 #   1. Settings → Pages → Build and deployment → Source: "GitHub Actions".
 #   2. If a run shows "Resource not accessible by integration", also set
 #      Settings → Actions → General → Workflow permissions → "Read and write".
-# After that, this workflow deploys on every push to the default branch (or a
-# manual run) and prints the site's https URL in the job summary.
+# After that, this workflow deploys on every push to the default branch `main`
+# (or a manual run) and prints the site's https URL in the job summary. It only
+# deploys from `main` because the github-pages environment rejects other branches.
 
 on:
   push:
-    branches: ["main", "claude/actig-offline-ai-assistant-fq65vo"]
+    branches: ["main"]
     paths: ["web/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
@@ -27,6 +28,9 @@ concurrency:
 
 jobs:
   deploy:
+    # Guard: the github-pages environment only allows the default branch, so a
+    # manual run from any other branch would be rejected — skip it cleanly.
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

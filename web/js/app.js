@@ -189,7 +189,9 @@ function sendText(){
 }
 
 async function handleText(text, spoken){
-  let intent = parse(text, { workspace: state.workspace });
+  let intent;
+  try{ intent = parse(text, { workspace: state.workspace }); }
+  catch(e){ console.warn('intent parse failed:', e); intent = { type:'chat', text }; }
   // AI-interpret fallback: if the rules saw plain chat but it looks like a command
   // and the full model is loaded, let the model classify it into a real command.
   if (intent.type === 'chat' && brain.ready && !brain.usingStub && looksCommandish(text, state.workspace === 'scene3D')){
@@ -422,8 +424,18 @@ function ensureScene(){
   if (!scenePromise){
     el.sceneCanvas.classList.remove('hidden');
     scenePromise = import('./scene.js')
-      .then(({ Scene3D }) => { scene = new Scene3D(el.sceneCanvas); scene.resize(); return scene; })
-      .catch((e) => { announce(t('ack.engineFail')); throw e; });
+      .then((mod) => {
+        if (!mod || typeof mod.Scene3D !== 'function') throw new Error('scene module did not load');
+        scene = new mod.Scene3D(el.sceneCanvas); scene.resize(); return scene;
+      })
+      .catch((e) => {
+        // Reset so the NEXT trigger retries — never leave a permanently rejected
+        // promise cached (that would make the 3D space un-openable for the session).
+        scenePromise = null; scene = null;
+        console.error('3D scene failed to load:', e);
+        announce(t('ack.engineFail') + (e?.message ? ` (${e.message})` : ''));
+        throw e;
+      });
   }
   return scenePromise;
 }

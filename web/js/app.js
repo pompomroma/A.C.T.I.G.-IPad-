@@ -60,8 +60,11 @@ function loadModel(){
 // Lets the user recover from lite mode (e.g. after a transient crash-loop guard)
 // by tapping the status line to re-attempt loading the full on-device model.
 function retryModel(){
-  if (!brain.usingStub) return;
-  try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); }catch{}
+  // Allow retrying from lite mode OR from a downgraded (0.5B) tier, so the user can
+  // force the full-size model back on (matching iPad).
+  const downgraded = brain.usingStub || /0\.5B/.test(brain.displayName || '');
+  if (!downgraded) return;
+  try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); localStorage.removeItem('actig_llm_tier'); }catch{}
   brain = new Brain();
   setStatus(t('st.retrying'));
   loadModel();

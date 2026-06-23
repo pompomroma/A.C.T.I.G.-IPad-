@@ -35,14 +35,13 @@ const THOROUGH = {
   ko: ' 복잡하거나 자세한 요청에는 신중히 생각하여 충실하고 잘 구성된 완전한 답변을 끝까지 제공하세요.',
 };
 
-// AUTO model-size selector. Inspects the real WebGPU adapter (memory tier +
-// shader-f16 support) and the reported device memory, then picks the largest
-// model the device can safely run. It is deliberately conservative on Safari
-// (which doesn't expose navigator.deviceMemory): iOS devices — including the 4 GB
-// 10th-gen iPad — get the small model so they don't OOM-crash, while roomy
-// desktops/Android get the larger one. f16 variants are chosen when the GPU
-// supports shader-f16 (smaller + faster), else f32 variants for compatibility.
-async function chooseModel(){
+// AUTO model selector. Keys the choice on **shader-f16 support** — a capability
+// shared by modern iPhone *and* iPad Apple GPUs — so the iPhone runs the SAME 1.5B
+// model as the iPad instead of being downgraded by memory heuristics that Safari
+// doesn't report (navigator.deviceMemory is undefined on iOS). `tier` lets the
+// crash-guard step down to the smaller model only if the larger one proves
+// unstable on a particular device.
+async function chooseModel(tier = 0){
   let f16 = false, maxBuf = 0;
   try{
     const adapter = await navigator.gpu.requestAdapter();
@@ -51,18 +50,20 @@ async function chooseModel(){
   }catch{}
 
   const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
-  // "Roomy" only when the platform actually reports lots of RAM (desktops,
-  // some Android) OR the GPU advertises a very large storage buffer (>= 1 GiB).
-  const roomy = mem >= 8 || maxBuf >= (1 << 30);
-
-  if (roomy) return f16 ? 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC' : 'Qwen2.5-1.5B-Instruct-q4f32_1-MLC';
-  return f16 ? 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC' : 'Qwen2.5-0.5B-Instruct-q4f32_1-MLC';
+  // The 1.5B model runs on any f16-capable WebGPU device (A14+/M-series and
+  // desktops), or where memory/buffer limits clearly allow it. tier>0 forces the
+  // smaller, more memory-frugal model.
+  const big = tier === 0 && (f16 || mem >= 8 || maxBuf >= (1 << 30));
+  const size = big ? '1.5B' : '0.5B';
+  const quant = f16 ? 'q4f16_1' : 'q4f32_1';   // f16 = smaller + faster when supported
+  return `Qwen2.5-${size}-Instruct-${quant}-MLC`;
 }
 
 // Crash-loop breaker: if loading the model crashed the tab (Safari OOM) two times
 // in a row recently, skip it and run lite mode so the page stops reloading.
 const FAIL_KEY = 'actig_llm_fails';
 const FAIL_TS = 'actig_llm_fail_ts';
+const TIER_KEY = 'actig_llm_tier';   // 0 = 1.5B, 1 = 0.5B, 2 = lite (set by crash-guard)
 
 // Evaluate a simple arithmetic request ("what is 12 times 7", "3 + 4 * 2").
 // Only ever runs after the string is reduced to digits/operators, so it is safe.
@@ -186,9 +187,19 @@ export class Brain {
     const now = Date.now();
     const lastTs = +(localStorage.getItem(FAIL_TS) || 0);
     let fails = +(localStorage.getItem(FAIL_KEY) || 0);
+    let tier = +(localStorage.getItem(TIER_KEY) || 0);
     if (now - lastTs > 30 * 60 * 1000) fails = 0;
+    // Two crashes (tab reloads) at the current size → step DOWN one tier
+    // (1.5B → 0.5B → lite) rather than giving up, so the device stays stable while
+    // running the largest model it actually can. Tier is sticky (only the user's
+    // "retry full model" tap resets it).
     if (fails >= 2){
-      this._useStub('lite mode (model disabled after repeated reloads)');
+      tier = Math.min(tier + 1, 2);
+      fails = 0;
+      try{ localStorage.setItem(TIER_KEY, String(tier)); localStorage.setItem(FAIL_KEY, '0'); }catch{}
+    }
+    if (tier >= 2){
+      this._useStub('lite mode (model too heavy for this device)');
       onProgress?.(1);
       return;
     }
@@ -196,7 +207,7 @@ export class Brain {
     // survives; a clean success or a caught error resets it below.
     try{ localStorage.setItem(FAIL_KEY, String(fails + 1)); localStorage.setItem(FAIL_TS, String(now)); }catch{}
 
-    const modelId = await chooseModel();
+    const modelId = await chooseModel(tier);
     try{
       const webllm = await this._withTimeout(import('@mlc-ai/web-llm'), 30000, 'web-llm import timed out');
       this.engine = await this._withTimeout(

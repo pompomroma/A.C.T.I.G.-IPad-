@@ -92,7 +92,12 @@ export class Scene3D {
     });
     const mesh = new THREE.Mesh(geometryFor(node.kind), mat);
     mesh.position.set(node.x, node.y, node.z);
-    mesh.scale.setScalar(node.s);
+    // Non-uniform scale (sx/sy/sz) when present — lets modelled parts be
+    // elongated/flat (car bodies, roofs, legs); else the uniform scale `s`.
+    if (node.sx != null || node.sy != null || node.sz != null)
+      mesh.scale.set(node.sx ?? node.s, node.sy ?? node.s, node.sz ?? node.s);
+    else
+      mesh.scale.setScalar(node.s);
     mesh.rotation.set(node.rx || 0, node.ry || 0, node.rz || 0);   // ||0 keeps old saves valid
     mesh.userData.id = node.id;
     this.group.add(mesh);
@@ -128,6 +133,8 @@ export class Scene3D {
       case 'scale': return { op:'scale', id:c.id, from:c.to, to:c.from };
       case 'rotate': return { op:'rotate', id:c.id, from:c.to, to:c.from };
       case 'swap': return { op:'swap', a:c.a, b:c.b, pa:c.pb, pb:c.pa };
+      case 'addMany': return { op:'removeMany', nodes:c.nodes };
+      case 'removeMany': return { op:'addMany', nodes:c.nodes };
     }
   }
 
@@ -143,6 +150,8 @@ export class Scene3D {
         if (ra && rb){ const tmp = {...ra.node}; this._setPos(ra,c.pb); this._setPos(rb,{x:tmp.x,y:tmp.y,z:tmp.z}); }
         break;
       }
+      case 'addMany': { c.nodes.forEach(n => this._buildMesh({ ...n })); this.selection = c.nodes[c.nodes.length-1]?.id ?? this.selection; break; }
+      case 'removeMany': { c.nodes.forEach(n => this._removeMesh(n.id)); this.selection = null; break; }
     }
     this._highlight();
   }
@@ -168,7 +177,16 @@ export class Scene3D {
 
   grow(id){ this._scale(this._targetId(id), 1.25); }
   shrink(id){ this._scale(this._targetId(id), 0.8); }
-  _scale(id, f){ const r = this.nodes.get(id); if (!r) return; this.selection = id; const to = Math.max(0.15, Math.min(r.node.s*f, 4)); this.apply({ op:'scale', id, from:r.node.s, to }); }
+  _scale(id, f){
+    const r = this.nodes.get(id); if (!r) return; this.selection = id;
+    // Scale non-uniform parts on every axis so modelled pieces keep their shape.
+    if (r.node.sx != null || r.node.sy != null || r.node.sz != null){
+      ['sx','sy','sz'].forEach(k => { const base = r.node[k] ?? r.node.s; r.node[k] = Math.max(0.05, Math.min(base*f, 6)); });
+      r.mesh.scale.set(r.node.sx ?? r.node.s, r.node.sy ?? r.node.s, r.node.sz ?? r.node.s);
+      this._save(); this._notify(); return;
+    }
+    const to = Math.max(0.15, Math.min(r.node.s*f, 4)); this.apply({ op:'scale', id, from:r.node.s, to });
+  }
 
   // Rotate the target object by `degrees` about `axis` ('x'|'y'|'z'). Undoable.
   rotate(axis='y', degrees=90, id){
@@ -202,6 +220,20 @@ export class Scene3D {
   }
   swapFirstTwo(){ const ids=[...this.nodes.keys()]; if (ids.length<2) return; const a=this.nodes.get(ids[0]).node, b=this.nodes.get(ids[1]).node;
     this.apply({ op:'swap', a:ids[0], b:ids[1], pa:{x:a.x,y:a.y,z:a.z}, pb:{x:b.x,y:b.y,z:b.z} }); }
+
+  // Assemble a model (list of part specs from the modeler) as ONE undo-able batch.
+  addModel(parts){
+    if (!parts || !parts.length) return;
+    const nodes = parts.map((p) => ({
+      id: uid(), kind: p.kind || 'box',
+      x: p.x || 0, y: p.y || 0, z: p.z || 0,
+      s: p.s ?? 0.7,
+      ...(p.sx != null ? { sx: p.sx } : {}), ...(p.sy != null ? { sy: p.sy } : {}), ...(p.sz != null ? { sz: p.sz } : {}),
+      rx: p.rx || 0, ry: p.ry || 0, rz: p.rz || 0,
+      hue: p.hue ?? (0.5 + Math.random()*0.12),
+    }));
+    this.apply({ op:'addMany', nodes });
+  }
   clear(){ [...this.nodes.keys()].forEach(id => { const r=this.nodes.get(id); this.apply({ op:'remove', node:{...r.node} }); }); }
 
   // Live drag (no history) + commit (records net move) — used by touch & hands.
@@ -271,4 +303,48 @@ export class Scene3D {
     this._highlight();
   }
   _notify(){ this.onChange?.(); }
+
+  // ---- export / import ----
+  // Wavefront OBJ of the whole scene (world-space, triangulated). No external
+  // libraries — works fully offline. Returns '' when the scene is empty.
+  exportOBJ(){
+    if (!this.nodes.size) return '';
+    let out = '# A.C.T.I.G. 3D model export\n';
+    let vOffset = 0;
+    const v = new THREE.Vector3();
+    for (const { node, mesh } of this.nodes.values()){
+      mesh.updateMatrixWorld(true);
+      const geo = mesh.geometry;
+      const pos = geo.attributes.position;
+      out += `o ${node.kind}_${node.id}\n`;
+      for (let i = 0; i < pos.count; i++){
+        v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+        out += `v ${v.x.toFixed(5)} ${v.y.toFixed(5)} ${v.z.toFixed(5)}\n`;
+      }
+      const idx = geo.index;
+      const faceCount = idx ? idx.count : pos.count;
+      for (let i = 0; i < faceCount; i += 3){
+        const a = (idx ? idx.getX(i)   : i)     + 1 + vOffset;
+        const b = (idx ? idx.getX(i+1) : i+1)   + 1 + vOffset;
+        const c = (idx ? idx.getX(i+2) : i+2)   + 1 + vOffset;
+        out += `f ${a} ${b} ${c}\n`;
+      }
+      vOffset += pos.count;
+    }
+    return out;
+  }
+
+  // A.C.T.I.G.-native scene file (the node list) — re-openable via importJSON.
+  exportJSON(){ return JSON.stringify([...this.nodes.values()].map(v => v.node), null, 2); }
+
+  // Replace the scene with a previously exported node list (one undo-able batch).
+  importJSON(nodes){
+    if (!Array.isArray(nodes)) return false;
+    const valid = nodes.filter(n => n && typeof n === 'object' && n.kind);
+    if (!valid.length) return false;
+    const old = [...this.nodes.values()].map(v => ({ ...v.node }));
+    if (old.length) this.apply({ op:'removeMany', nodes: old });
+    this.apply({ op:'addMany', nodes: valid.map(n => ({ id: uid(), s:0.7, rx:0, ry:0, rz:0, hue:0.55, ...n })) });
+    return true;
+  }
 }

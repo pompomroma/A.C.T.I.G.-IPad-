@@ -248,6 +248,34 @@ export class Brain {
     }
   }
 
+  /** Ask the full model to decompose a description into primitive parts (JSON).
+   *  Returns a validated parts array, or null (so the caller can fall back). */
+  async modelSpec(desc){
+    if (this.usingStub || !this.engine) return null;
+    const sys = 'You output ONLY a JSON array that builds a 3D model from simple primitives. ' +
+      'Each element: {"kind": one of "box","sphere","cylinder","cone","pyramid","torus","plane", ' +
+      '"x":num,"y":num,"z":num,"s":num,"hue":0..1}. Coordinates within -2..2, sizes 0.1..1.5. ' +
+      'Use 3 to 12 parts so it resembles the object. No prose, no markdown — only the JSON array.';
+    try{
+      const res = await this._withTimeout(this.engine.chat.completions.create({
+        messages: [{ role:'system', content: sys }, { role:'user', content: `Object: ${desc}` }],
+        stream: false, temperature: 0.4, max_tokens: 512,
+      }), 30000, 'modelSpec timed out');
+      const text = res.choices?.[0]?.message?.content || '';
+      const m = text.match(/\[[\s\S]*\]/);
+      if (!m) return null;
+      const arr = JSON.parse(m[0]);
+      if (!Array.isArray(arr) || !arr.length) return null;
+      const kinds = new Set(['box','sphere','cylinder','cone','pyramid','torus','plane']);
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, (typeof v === 'number' && isFinite(v)) ? v : 0));
+      const parts = arr.filter(p => p && kinds.has(p.kind)).slice(0, 14).map(p => ({
+        kind: p.kind, x: clamp(p.x, -3, 3), y: clamp(p.y, -3, 3), z: clamp(p.z, -3, 3),
+        s: clamp(p.s ?? 0.6, 0.1, 2), hue: clamp(p.hue ?? 0.6, 0, 1),
+      }));
+      return parts.length ? parts : null;
+    }catch{ return null; }
+  }
+
   /** Interrupt the in-flight generation (barge-in). */
   abort(){
     this._abort?.abort();

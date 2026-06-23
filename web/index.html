@@ -52,6 +52,7 @@
     <span class="sep"></span>
     <button data-tool="undo" data-i18n="tool.undo">↶ Undo</button>
     <button data-tool="redo" data-i18n="tool.redo">↷ Redo</button>
+    <button data-tool="export" data-i18n="tool.export">⬇ Export</button>
   </div>
 
   <!-- Jarvis hologram overlay -->
@@ -74,7 +75,7 @@
       <div id="transcript" class="transcript"></div>
 
       <div class="input-row">
-        <label class="attach">📎<input id="file-input" type="file" accept="image/*" hidden /></label>
+        <label class="attach">📎<input id="file-input" type="file" accept="image/*,application/json,.json" hidden /></label>
         <input id="text-input" class="text-input" type="text" placeholder="Command A.C.T.I.G.…" data-i18n-ph="ui.placeholder" />
         <button id="send-btn" class="send">▲</button>
       </div>

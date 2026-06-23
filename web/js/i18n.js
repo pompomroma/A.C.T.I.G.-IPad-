@@ -25,7 +25,7 @@ const STR = {
     'ui.langToggle':'한국어',
     'tool.box':'▣ Box', 'tool.sphere':'◯ Sphere', 'tool.cylinder':'⬭ Cyl', 'tool.cone':'▲ Cone',
     'tool.grow':'＋ Grow', 'tool.shrink':'－ Shrink', 'tool.rotate':'⟳ Rotate', 'tool.delete':'🗑 Del',
-    'tool.undo':'↶ Undo', 'tool.redo':'↷ Redo',
+    'tool.undo':'↶ Undo', 'tool.redo':'↷ Redo', 'tool.export':'⬇ Export',
     // statuses
     'st.dormant':'dormant', 'st.starting':'starting…', 'st.listening':'online · listening',
     'st.thinking':'thinking…', 'st.responding':'responding', 'st.listen':'listening',
@@ -53,6 +53,11 @@ const STR = {
     'ack.fileError':'I received the file, sir, but could not analyse it.',
     'ack.engineFail':'The 3D engine could not load, sir.',
     'st.analysing':'analysing…', 'scanQ':'What is this object?',
+    'st.building':'modelling…',
+    'ack.built':(d)=>`Built ${d}, sir.`, 'ack.approx':' (my interpretation — say "clear" to start over)',
+    'ack.exported':'Exported the model, sir — actig-model.obj and actig-model.json.',
+    'ack.nothingToExport':'There is nothing to export yet, sir.',
+    'ack.imported':'Loaded the model, sir.',
   },
   ko: {
     'ui.title':'A.C.T.I.G.', 'ui.you':'사용자', 'ui.ai':'액티그',
@@ -61,7 +66,7 @@ const STR = {
     'ui.langToggle':'EN',
     'tool.box':'▣ 정육면체', 'tool.sphere':'◯ 구체', 'tool.cylinder':'⬭ 원기둥', 'tool.cone':'▲ 원뿔',
     'tool.grow':'＋ 확대', 'tool.shrink':'－ 축소', 'tool.rotate':'⟳ 회전', 'tool.delete':'🗑 삭제',
-    'tool.undo':'↶ 실행취소', 'tool.redo':'↷ 다시실행',
+    'tool.undo':'↶ 실행취소', 'tool.redo':'↷ 다시실행', 'tool.export':'⬇ 내보내기',
     'st.dormant':'대기 중', 'st.starting':'시작 중…', 'st.listening':'온라인 · 듣는 중',
     'st.thinking':'생각 중…', 'st.responding':'응답 중', 'st.listen':'듣는 중',
     'st.transcribing':'받아쓰는 중…', 'st.typeToMe':'온라인 · 입력해 주세요',
@@ -86,6 +91,11 @@ const STR = {
     'ack.fileError':'파일을 받았지만 분석할 수 없었습니다 주인님.',
     'ack.engineFail':'3D 엔진을 불러올 수 없었습니다 주인님.',
     'st.analysing':'분석 중…', 'scanQ':'이 사물은 무엇입니까?',
+    'st.building':'모델링 중…',
+    'ack.built':(d)=>`${d}을(를) 만들었습니다 주인님.`, 'ack.approx':' (제 해석입니다 — "초기화"라고 하시면 다시 시작합니다)',
+    'ack.exported':'모델을 내보냈습니다 주인님 — actig-model.obj 와 actig-model.json.',
+    'ack.nothingToExport':'아직 내보낼 것이 없습니다 주인님.',
+    'ack.imported':'모델을 불러왔습니다 주인님.',
   },
 };
 

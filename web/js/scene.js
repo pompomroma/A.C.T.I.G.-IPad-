@@ -181,6 +181,25 @@ export class Scene3D {
   }
 
   deleteSelected(id){ const tid = this._targetId(id); const r = this.nodes.get(tid); if (r) this.apply({ op:'remove', node:{...r.node} }); }
+
+  // Move the target object by a delta (voice "move left/up/forward"). Clamped so
+  // it stays on the grid. Undoable via the existing 'move' op.
+  moveBy(dx, dy, dz, id){
+    const tid = this._targetId(id); const r = this.nodes.get(tid); if (!r) return;
+    this.selection = tid;
+    const clamp = (v) => Math.max(-3.5, Math.min(3.5, v));
+    const from = { x:r.node.x, y:r.node.y, z:r.node.z };
+    const to = { x:clamp(from.x+dx), y:clamp(from.y+dy), z:clamp(from.z+dz) };
+    if (from.x===to.x && from.y===to.y && from.z===to.z) return;
+    this.apply({ op:'move', id:tid, from, to });
+  }
+  // Move the target object to an absolute position (voice "move to the center").
+  moveTo(x, y, z, id){
+    const tid = this._targetId(id); const r = this.nodes.get(tid); if (!r) return;
+    this.selection = tid;
+    const from = { x:r.node.x, y:r.node.y, z:r.node.z };
+    this.apply({ op:'move', id:tid, from, to:{ x, y, z } });
+  }
   swapFirstTwo(){ const ids=[...this.nodes.keys()]; if (ids.length<2) return; const a=this.nodes.get(ids[0]).node, b=this.nodes.get(ids[1]).node;
     this.apply({ op:'swap', a:ids[0], b:ids[1], pa:{x:a.x,y:a.y,z:a.z}, pb:{x:b.x,y:b.y,z:b.z} }); }
   clear(){ [...this.nodes.keys()].forEach(id => { const r=this.nodes.get(id); this.apply({ op:'remove', node:{...r.node} }); }); }

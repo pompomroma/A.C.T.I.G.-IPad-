@@ -65,6 +65,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;
 .switcher .ws{width:34px;height:34px;border-radius:50%;border:1px solid rgba(82,188,255,.6);
   background:rgba(13,42,77,.5);color:#fff;font-size:15px}
 .switcher .ws.active{background:var(--holo-accent);color:#001}
+.lang-btn{height:34px;padding:0 10px;border-radius:17px;border:1px solid rgba(82,188,255,.6);
+  background:rgba(13,42,77,.5);color:#fff;font-size:13px;white-space:nowrap}
 
 .transcript{max-height:min(48vh,360px);overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px}
 .msg{max-width:85%;padding:8px 12px;border-radius:14px;font-size:15px;line-height:1.35;word-wrap:break-word}

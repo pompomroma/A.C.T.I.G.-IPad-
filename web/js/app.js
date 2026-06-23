@@ -10,8 +10,7 @@
 import { Brain, estimateMaxTokens } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
 import { parse } from './intent.js';
-
-const WELCOME = 'Welcome sir, ACTIG at your service sir, how may I assist you sir.';
+import { t, getLang, toggleLang, applyI18n, shapeName } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -20,7 +19,7 @@ const el = {
   micUser: $('mic-user'), micAI: $('mic-ai'), wakeBadge: $('wake-badge'),
   boot: $('boot'), sceneCanvas: $('scene-canvas'), sceneToolbar: $('scene-toolbar'),
   cameraWS: $('camera-workspace'), video: $('camera-video'), handOverlay: $('hand-overlay'),
-  reticle: $('reticle'), scanBtn: $('scan-btn'),
+  reticle: $('reticle'), scanBtn: $('scan-btn'), langToggle: $('lang-toggle'),
 };
 
 const state = {
@@ -37,9 +36,10 @@ let modelReadyPromise = null;
 // ---------- boot (UI first, model in background) ----------
 boot();
 function boot(){
+  applyI18n();                       // localize all static labels for the saved language
   bindUI();                          // wire the UI immediately — never gated on a download
   el.boot.classList.add('hidden');
-  setStatus('starting…');
+  setStatus(t('st.starting'));
 
   loadModel();                       // load the brain in the BACKGROUND; UI stays responsive
 
@@ -50,10 +50,9 @@ function boot(){
 
 // Loads (or reloads) the language model in the background.
 function loadModel(){
-  modelReadyPromise = brain.load((p) => setStatus(`loading model… ${Math.round(p * 100)}%`))
-    .then(() => setStatus(brain.usingStub ? 'lite mode · tap to retry full model'
-                                          : `full model ready · ${brain.displayName}`))
-    .catch((e) => { console.warn(e); setStatus('ready (offline stub)'); });
+  modelReadyPromise = brain.load((p) => setStatus(t('st.loading', Math.round(p * 100))))
+    .then(() => setStatus(brain.usingStub ? t('st.liteRetry') : t('st.ready', brain.displayName)))
+    .catch((e) => { console.warn(e); setStatus(t('st.offlineStub')); });
   return modelReadyPromise;
 }
 
@@ -63,8 +62,17 @@ function retryModel(){
   if (!brain.usingStub) return;
   try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); }catch{}
   brain = new Brain();
-  setStatus('retrying full model…');
+  setStatus(t('st.retrying'));
   loadModel();
+}
+
+// Flip the input/output language (한국어 ⇄ English), re-localize the UI, and
+// restart speech recognition so it listens in the new language.
+function toggleLanguage(){
+  toggleLang();
+  applyI18n();
+  setStatus(state.mode === 'dormant' ? t('st.dormant') : t('st.listening'));
+  if (state.mode !== 'dormant' && !state.userMicMuted){ voice.stopListening(); startListening(); }
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
@@ -101,8 +109,9 @@ function bindUI(){
     b.addEventListener('click', () => setWorkspace(b.dataset.ws)));
   el.sceneToolbar.querySelectorAll('button').forEach((b) =>
     b.addEventListener('click', () => onTool(b.dataset.tool)));
-  el.scanBtn.addEventListener('click', () => scanObject('What is this object?'));
+  el.scanBtn.addEventListener('click', () => scanObject(t('scanQ')));
   el.status.addEventListener('click', retryModel);   // tap status to retry full model
+  el.langToggle?.addEventListener('click', toggleLanguage);
 }
 
 // ---------- lifecycle ----------
@@ -110,8 +119,8 @@ async function wake(){
   if (state.mode !== 'dormant') return;
   setMode('awake');
   setWorkspace('conversation');
-  setStatus('online · listening');
-  announce(WELCOME);             // greeting: text + voice
+  setStatus(t('st.listening'));
+  announce(t('welcome'));        // greeting: text + voice
   startListening();
 }
 
@@ -120,7 +129,7 @@ function shutdown(){
   stopCamera(); if (hands) hands.stop();
   state.cameraControl = false;
   setMode('dormant');
-  setStatus('dormant');
+  setStatus(t('st.dormant'));
 }
 
 function startListening(){
@@ -141,13 +150,13 @@ function onVoiceStatus(s){
   if (s === 'unavailable'){
     if (!state.voiceNoticeShown){
       state.voiceNoticeShown = true;
-      announce('Voice input is unavailable on this browser, sir — please type to me and I will still reply by voice.');
+      announce(t('voiceUnavailable'));
     }
-    setStatus('online · type to me');
+    setStatus(t('st.typeToMe'));
   } else if (s === 'transcribing'){
-    setStatus('transcribing…');
+    setStatus(t('st.transcribing'));
   } else if (s === 'listening' && state.mode !== 'responding'){
-    setStatus('online · listening');
+    setStatus(t('st.listening'));
   }
 }
 
@@ -161,7 +170,7 @@ function onFinalSpeech(text){
 
 function interrupt(){
   brain.abort(); voice.stopSpeaking();
-  setMode('awake'); setStatus('go ahead — listening');
+  setMode('awake'); setStatus(t('st.goAhead'));
 }
 
 // ---------- input handling ----------
@@ -184,17 +193,17 @@ async function route(intent){
   switch(intent.type){
     case 'wake': return wake();
     case 'shutdown': return shutdown();
-    case 'openScene': setWorkspace('scene3D'); return announce('Opening the 3D project space, sir.');
+    case 'openScene': setWorkspace('scene3D'); return announce(t('ack.openScene'));
     case 'openConversation': return setWorkspace('conversation');
     case 'openCamera': return setWorkspace('camera');
     case 'enableCameraControl': return enableCameraControl();
     case 'disableCameraControl':
       state.cameraControl = false; if (hands) hands.stop(); el.handOverlay.classList.add('hidden');
       el.video.classList.remove('detecting'); stopCamera();
-      return announce('Camera control disabled, sir.');
+      return announce(t('ack.cameraDisabled'));
     case 'analyze': setWorkspace('camera'); return scanObject(intent.question);
-    case 'undo': { const s = await ensureScene(); s.undo(); return announce('Reverted, sir.'); }
-    case 'redo': { const s = await ensureScene(); s.redo(); return announce('Restored, sir.'); }
+    case 'undo': { const s = await ensureScene(); s.undo(); return announce(t('ack.undo')); }
+    case 'redo': { const s = await ensureScene(); s.redo(); return announce(t('ack.redo')); }
     case 'scene': return applyScene(intent);
     case 'chat': default: return generateReply(intent.text);
   }
@@ -204,14 +213,16 @@ async function applyScene(i){
   setWorkspace('scene3D');
   const s = await ensureScene();
   switch(i.action){
-    case 'add': s.addShape(i.kind); return announce(`Added a ${i.kind}, sir.`);
-    case 'multiply': s.multiply(i.kind, i.count); return announce(`Created ${i.count} ${i.kind}s, sir.`);
-    case 'grow': s.grow(); return announce('Enlarged, sir.');
-    case 'shrink': s.shrink(); return announce('Shrunk, sir.');
-    case 'rotate': s.rotate(i.axis, i.degrees); return announce('Rotated, sir.');
-    case 'delete': s.deleteSelected(); return announce('Deleted, sir.');
-    case 'swap': s.swapFirstTwo(); return announce('Swapped positions, sir.');
-    case 'clear': s.clear(); return announce('Scene cleared, sir.');
+    case 'add': s.addShape(i.kind); return announce(t('ack.added', shapeName(i.kind)));
+    case 'multiply': s.multiply(i.kind, i.count); return announce(t('ack.created', i.count, shapeName(i.kind)));
+    case 'grow': s.grow(); return announce(t('ack.grow'));
+    case 'shrink': s.shrink(); return announce(t('ack.shrink'));
+    case 'rotate': s.rotate(i.axis, i.degrees); return announce(t('ack.rotate'));
+    case 'move': s.moveBy(i.dx, i.dy, i.dz); return announce(t('ack.move'));
+    case 'moveTo': s.moveTo(i.x, i.y, i.z); return announce(t('ack.moveTo'));
+    case 'delete': s.deleteSelected(); return announce(t('ack.delete'));
+    case 'swap': s.swapFirstTwo(); return announce(t('ack.swap'));
+    case 'clear': s.clear(); return announce(t('ack.clear'));
   }
 }
 
@@ -221,7 +232,7 @@ async function applyScene(i){
 // shown in the transcript. For plain chat it equals the visible message.
 async function generateReply(override){
   brain.abort();
-  setMode('responding'); setStatus('thinking…');
+  setMode('responding'); setStatus(t('st.thinking'));
 
   // Never block on the model download: if the full model isn't ready yet, answer
   // instantly with the lite brain and let the real model take over on later turns.
@@ -242,14 +253,16 @@ async function generateReply(override){
   const lastUser = [...state.messages].reverse().find(m => m.role === 'user');
   const maxTokens = estimateMaxTokens(lastUser?.content || override || '');
 
+  const lang = getLang();
   const bubble = addMessage('assistant', '');
   try{
-    for await (const tok of (full ? brain.reply(history, { maxTokens }) : brain.replyLite(history))){
+    let streamed = false;
+    for await (const tok of (full ? brain.reply(history, { maxTokens, lang }) : brain.replyLite(history, lang))){
       bubble.el.textContent += tok;
       bubble.content += tok;
       scrollTranscript();
       if (!state.aiVoiceMuted) voice.enqueueToken(tok);
-      if (el.status.textContent === 'thinking…') setStatus('responding');
+      if (!streamed){ streamed = true; setStatus(t('st.responding')); }
     }
     if (!state.aiVoiceMuted) voice.flush();
     if (!bubble.content.trim()) bubble.el.textContent = '(no response — see status)';
@@ -257,13 +270,13 @@ async function generateReply(override){
     // model is still loading (not shown when the device is permanently lite).
     if (loadingFullModel && !state.warmNoteShown){
       state.warmNoteShown = true;
-      bubble.el.textContent += '  (quick reply, sir — my full model is still warming up.)';
+      bubble.el.textContent += t('warmNote');
     }
     setMode('awake');
-    setStatus(brain.ready ? 'listening' : 'listening · full model loading…');
+    setStatus(brain.ready ? t('st.listen') : t('st.listenLoading'));
   }catch(e){
     bubble.el.textContent += ` [error: ${e.message}]`;
-    setMode('awake'); setStatus('listening');
+    setMode('awake'); setStatus(t('st.listen'));
   }
 }
 
@@ -287,13 +300,13 @@ async function enableCameraControl(){
     const { Hands } = await import('./hands.js');
     if (!hands) hands = new Hands(el.video, s, el.handOverlay);
     const ok = await hands.init();
-    if (!ok){ announce('Hand tracking is unavailable on this browser, sir.'); stopCamera(); return; }
+    if (!ok){ announce(t('ack.handUnavailable')); stopCamera(); return; }
     state.cameraControl = true;
     el.video.classList.add('detecting');             // play hidden for detection
     el.handOverlay.classList.remove('hidden');
     hands.start();
-    announce('Camera hand control enabled, sir. Pinch to grab a shape and move it.');
-  }catch(e){ announce('I could not access the camera, sir.'); }
+    announce(t('ack.handEnabled'));
+  }catch(e){ announce(t('ack.noCamera')); }
 }
 
 async function getVision(){
@@ -307,12 +320,12 @@ async function scanObject(question){
   try{
     if (!stream) await startCamera('environment');
     const v = await getVision();
-    setStatus('analysing…');
+    setStatus(t('st.analysing'));
     const summary = await v.analyze(el.video);
     addMessage('user', question);
-    const prompt = `Camera vision reports: ${summary}. The user asks: "${question}". Answer concisely, sir.`;
+    const prompt = `Camera vision reports: ${summary}. The user asks: "${question}". Answer concisely.`;
     await generateReply(prompt);
-  }catch(e){ announce('I could not analyse that, sir.'); }
+  }catch(e){ announce(t('ack.cantAnalyze')); }
 }
 
 async function onFile(e){
@@ -323,8 +336,8 @@ async function onFile(e){
     const v = await getVision();
     const img = await loadImage(file);
     const summary = await v.analyze(img);
-    await generateReply(`The user attached an image. Vision reports: ${summary}. Briefly describe it, sir.`);
-  }catch(_){ announce('I received the file, sir, but could not analyse it.'); }
+    await generateReply(`The user attached an image. Vision reports: ${summary}. Briefly describe it.`);
+  }catch(_){ announce(t('ack.fileError')); }
 }
 function loadImage(file){
   return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
@@ -349,7 +362,7 @@ function ensureScene(){
     el.sceneCanvas.classList.remove('hidden');
     scenePromise = import('./scene.js')
       .then(({ Scene3D }) => { scene = new Scene3D(el.sceneCanvas); scene.resize(); return scene; })
-      .catch((e) => { announce('The 3D engine could not load, sir.'); throw e; });
+      .catch((e) => { announce(t('ack.engineFail')); throw e; });
   }
   return scenePromise;
 }

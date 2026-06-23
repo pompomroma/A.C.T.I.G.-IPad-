@@ -9,8 +9,8 @@
  *    the Cache API / IndexedDB; we deliberately do NOT intercept large range
  *    requests here.
  */
-const SHELL = 'actig-shell-v7';
-const RUNTIME = 'actig-runtime-v7';
+const SHELL = 'actig-shell-v8';
+const RUNTIME = 'actig-runtime-v8';
 
 const SHELL_ASSETS = [
   './',
@@ -24,6 +24,7 @@ const SHELL_ASSETS = [
   './js/hands.js',
   './js/vision.js',
   './js/intent.js',
+  './js/i18n.js',
   './vendor/three.module.js',
   './icons/icon-180.png',
   './icons/icon-192.png',

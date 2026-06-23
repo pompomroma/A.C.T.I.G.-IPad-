@@ -42,10 +42,17 @@ export class Scene3D {
 
   _initThree(){
     // powerPreference default + graceful options for weaker GPUs (10th-gen iPad).
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas, antialias: true, alpha: true,
-      powerPreference: 'default', failIfMajorPerformanceCaveat: false,
-    });
+    // Retry with minimal options if the first context request fails so a fussy
+    // browser doesn't block the whole 3D space.
+    try{
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas, antialias: true, alpha: true,
+        powerPreference: 'default', failIfMajorPerformanceCaveat: false,
+      });
+    }catch(e){
+      console.warn('WebGL antialias context failed, retrying minimal:', e);
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true });
+    }
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
     this.camera.position.set(0, 1.1, 3.4);

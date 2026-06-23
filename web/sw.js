@@ -9,8 +9,8 @@
  *    the Cache API / IndexedDB; we deliberately do NOT intercept large range
  *    requests here.
  */
-const SHELL = 'actig-shell-v5';
-const RUNTIME = 'actig-runtime-v5';
+const SHELL = 'actig-shell-v6';
+const RUNTIME = 'actig-runtime-v6';
 
 const SHELL_ASSETS = [
   './',

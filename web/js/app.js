@@ -26,7 +26,7 @@ const el = {
 const state = {
   mode: 'dormant', workspace: 'conversation',
   userMicMuted: false, aiVoiceMuted: false, cameraControl: false,
-  messages: [], liveEl: null, voiceNoticeShown: false, warmNoteShown: false,
+  messages: [], liveEl: null, voiceNoticeShown: false, warmNoteShown: false, webgpuNoticeShown: false,
 };
 
 let brain = new Brain();
@@ -52,7 +52,14 @@ function boot(){
 // Loads (or reloads) the language model in the background.
 function loadModel(){
   modelReadyPromise = brain.load((p) => setStatus(t('st.loading', Math.round(p * 100))))
-    .then(() => setStatus(brain.usingStub ? t('st.liteRetry') : t('st.ready', brain.displayName)))
+    .then(() => {
+      if (!brain.usingStub){ setStatus(t('st.ready', brain.displayName)); return; }
+      setStatus(t('st.liteRetry'));
+      // The one thing code can't fix: WebGPU disabled. Tell the user once how to enable it.
+      if (!('gpu' in navigator) && !state.webgpuNoticeShown){
+        state.webgpuNoticeShown = true; announce(t('ack.webgpuOff'));
+      }
+    })
     .catch((e) => { console.warn(e); setStatus(t('st.offlineStub')); });
   return modelReadyPromise;
 }

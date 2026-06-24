@@ -53,6 +53,12 @@ async function modelCandidates(tier = 0){
   const quant = f16 ? 'q4f16_1' : 'q4f32_1';
   const big = `Qwen2.5-1.5B-Instruct-${quant}-MLC`;
   const small = `Qwen2.5-0.5B-Instruct-${quant}-MLC`;
+  // iPhone: the 0.5B model downloads/compiles reliably within iOS Safari's memory
+  // and tab-lifetime limits, so the full model actually LOADS. The 1.5B frequently
+  // can't finish there (the tab gets discarded mid-download). iPad reports as
+  // desktop Safari (no 'iPhone' in UA) and still gets the larger model.
+  const isPhone = typeof navigator !== 'undefined' && /iPhone|iPod/.test(navigator.userAgent || '');
+  if (isPhone) return [small];
   return (tier === 0 && capable) ? [big, small] : [small];
 }
 
@@ -188,8 +194,13 @@ export class Brain {
     const lastTs = +(localStorage.getItem(FAIL_TS) || 0);
     let fails = +(localStorage.getItem(FAIL_KEY) || 0);
     let tier = +(localStorage.getItem(TIER_KEY) || 0);
-    if (now - lastTs > 30 * 60 * 1000) fails = 0;
-    if (fails >= 1){
+    // A leftover mark only counts as a genuine crash if the tab died QUICKLY after
+    // we started loading (instant OOM / incompatibility). A normal iOS tab-discard
+    // during the legit multi-minute weight download — or just navigating away — is
+    // NOT a crash: the weights are cached/resumable, so we retry the same model.
+    const rapidCrash = lastTs > 0 && (now - lastTs) < 40 * 1000;
+    if (!rapidCrash || now - lastTs > 30 * 60 * 1000) fails = 0;
+    if (fails >= 2){
       tier = Math.min(tier + 1, 2);
       fails = 0;
       try{ localStorage.setItem(TIER_KEY, String(tier)); localStorage.setItem(FAIL_KEY, '0'); }catch{}

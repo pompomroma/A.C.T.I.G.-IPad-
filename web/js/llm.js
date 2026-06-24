@@ -293,7 +293,8 @@ export class Brain {
     const sys =
       'You map a user command for a 3D modelling assistant to ONE JSON object and nothing else. ' +
       'Allowed "type": chat, wake, shutdown, openScene, openConversation, openCamera, ' +
-      'enableCameraControl, disableCameraControl, analyze, undo, redo, export, build, scene. ' +
+      'enableCameraControl, disableCameraControl, analyze, undo, redo, export, build, scene, ' +
+      'setLang (with "lang":"ko" or "en"), muteVoice, unmuteVoice, retryModel, help. ' +
       'For 3D edits use {"type":"scene","action":...}; action one of add, multiply, grow, shrink, ' +
       'rotate, move, moveTo, delete, swap, clear. add/multiply need "kind" (box, sphere, cylinder, ' +
       'cone, pyramid, torus, plane) and multiply a "count". rotate has "axis"(x|y|z) and "degrees". ' +

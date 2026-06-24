@@ -119,6 +119,29 @@ export function parse(raw, ctx = {}){
   if (has(t,'wake up actig','wake up act','wakeup actig','액티그 일어나','액티그 깨어나','일어나 액티그','깨어나')) return { type:'wake' };
   if (has(t,'shut down all systems','shutdown all systems','시스템 종료','모든 시스템 종료','전부 꺼','다 꺼')) return { type:'shutdown' };
 
+  // Switch language by voice.
+  if (has(t,'speak korean','in korean','switch to korean','korean please','talk in korean','say it in korean','한국어로','한국말로','한국어로 바꿔','한국어로 말해','한국어로 해')
+      || (fuzzyWord(t,'korean') && fuzzyWord(t,'speak','switch','talk','change','use','say')))
+    return { type:'setLang', lang:'ko' };
+  if (has(t,'speak english','in english','switch to english','english please','talk in english','say it in english','영어로','영어로 바꿔','영어로 말해','영어로 해')
+      || (fuzzyWord(t,'english') && fuzzyWord(t,'speak','switch','talk','change','use','say')))
+    return { type:'setLang', lang:'en' };
+
+  // Mute / unmute A.C.T.I.G.'s spoken voice.
+  if (has(t,'be quiet','stop talking','stop speaking','mute yourself','mute your voice','no voice','voice off','say nothing','quiet please','조용히','말하지 마','음성 꺼','목소리 꺼','조용히 해'))
+    return { type:'muteVoice' };
+  if (has(t,'speak again','start talking','unmute','voice on','use your voice','out loud','음성 켜','목소리 켜','소리 켜'))
+    return { type:'unmuteVoice' };
+
+  // Reload / retry the full conversation model.
+  if (has(t,'reload the model','reload model','retry the model','retry model','load the full model','use the full model','restart the model','full model please','모델 다시','전체 모델','모델 재시도','모델 다시 불러')
+      || (fuzzyWord(t,'reload','retry','restart') && fuzzyWord(t,'model')))
+    return { type:'retryModel' };
+
+  // "What can I say?" — list the voice commands.
+  if (has(t,'what can i say','list commands','show commands','what commands','voice commands','help me use','도움말','명령어','음성 명령','무슨 명령','뭐라고 말'))
+    return { type:'help' };
+
   // --- Open the 3D project (very flexible: explicit phrases, OR a 3D/“modeling”
   // signal combined with an open verb). The verb requirement on the looser signals
   // keeps ordinary talk ("I enjoy modeling", "what's a 3d model") out of it.
@@ -258,21 +281,23 @@ function parseScene(t, inScene){
 export function looksCommandish(raw, inScene){
   const t = norm(raw);
   if (inScene) return true;
-  return /\b(add|make|create|build|model|design|spawn|place|put|insert|drop|move|shift|slide|push|pull|drag|rotate|spin|turn|tilt|roll|flip|scale|grow|shrink|bigger|smaller|enlarge|reduce|expand|delete|remove|erase|clear|wipe|reset|swap|open|close|exit|enter|launch|scan|identify|recognize|analyze|analyse|export|download|save|undo|redo|enable|disable)\b/.test(t)
+  return /\b(add|make|create|build|model|design|spawn|place|put|insert|drop|move|shift|slide|push|pull|drag|rotate|spin|turn|tilt|roll|flip|scale|grow|shrink|bigger|smaller|enlarge|reduce|expand|delete|remove|erase|clear|wipe|reset|swap|open|close|exit|enter|launch|scan|identify|recognize|analyze|analyse|export|download|save|undo|redo|enable|disable|quiet|mute|unmute|korean|english|reload|retry|restart)\b/.test(t)
     || /\b(it|that|this|them|the (cube|box|sphere|ball|cylinder|cone|pyramid|torus|object|model|shape|thing))\b/.test(t)
-    || has(t,'추가','만들','생성','이동','옮겨','움직','회전','돌려','확대','축소','크게','작게','삭제','지워','없애','열어','닫','스캔','분석','인식','내보내','다운로드','모델링','지어','회전','정렬','비워','초기화');
+    || has(t,'추가','만들','생성','이동','옮겨','움직','회전','돌려','확대','축소','크게','작게','삭제','지워','없애','열어','닫','스캔','분석','인식','내보내','다운로드','모델링','지어','정렬','비워','초기화','한국어','영어','조용','음성','목소리');
 }
 
 // Validate the LLM classifier's JSON into the app's intent shape. Returns a clean
 // intent or null (so the caller falls back to plain chat).
 const AI_TYPES = new Set(['wake','shutdown','openScene','openConversation','openCamera',
-  'enableCameraControl','disableCameraControl','analyze','undo','redo','export','build','scene']);
+  'enableCameraControl','disableCameraControl','analyze','undo','redo','export','build','scene',
+  'setLang','muteVoice','unmuteVoice','retryModel','help']);
 const SCENE_ACTIONS = new Set(['add','multiply','grow','shrink','rotate','move','moveTo','delete','swap','clear']);
 const KINDS = new Set(['box','sphere','cylinder','cone','pyramid','torus','plane']);
 
 export function intentFromAI(obj, raw){
   if (!obj || typeof obj !== 'object' || !AI_TYPES.has(obj.type)) return null;
   if (obj.type === 'analyze') return { type:'analyze', question: raw };
+  if (obj.type === 'setLang') return { type:'setLang', lang: obj.lang === 'ko' ? 'ko' : 'en' };
   if (obj.type === 'build') return { type:'build', desc: (typeof obj.desc === 'string' && obj.desc.trim()) ? obj.desc : raw };
   if (obj.type === 'scene'){
     if (!SCENE_ACTIONS.has(obj.action)) return null;

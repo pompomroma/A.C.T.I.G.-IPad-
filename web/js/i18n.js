@@ -59,6 +59,10 @@ const STR = {
     'ack.exported':'Exported the model, sir — actig-model.obj and actig-model.json.',
     'ack.nothingToExport':'There is nothing to export yet, sir.',
     'ack.imported':'Loaded the model, sir.',
+    'ack.langSwitched':'Switched to English, sir.', 'ack.langAlready':'Already speaking English, sir.',
+    'ack.voiceMuted':'Voice muted, sir — I will reply in text.', 'ack.voiceUnmuted':'Voice on, sir.',
+    'ack.modelReloading':'Reloading the full model, sir.', 'ack.modelAlready':'The full model is already running, sir.',
+    'help.text':'You can say, sir: “open the 3D project”, “add a cube”, “make it bigger”, “rotate it”, “move it left”, “build a house”, “scan this”, “export the model”, “switch to Korean”, “be quiet”, “reload the model” — or just talk to me normally.',
   },
   ko: {
     'ui.title':'A.C.T.I.G.', 'ui.you':'사용자', 'ui.ai':'액티그',
@@ -97,6 +101,10 @@ const STR = {
     'ack.exported':'모델을 내보냈습니다 주인님 — actig-model.obj 와 actig-model.json.',
     'ack.nothingToExport':'아직 내보낼 것이 없습니다 주인님.',
     'ack.imported':'모델을 불러왔습니다 주인님.',
+    'ack.langSwitched':'한국어로 전환했습니다 주인님.', 'ack.langAlready':'이미 한국어로 말하고 있습니다 주인님.',
+    'ack.voiceMuted':'음성을 껐습니다 주인님 — 글로 답하겠습니다.', 'ack.voiceUnmuted':'음성을 켰습니다 주인님.',
+    'ack.modelReloading':'전체 모델을 다시 불러옵니다 주인님.', 'ack.modelAlready':'이미 전체 모델이 실행 중입니다 주인님.',
+    'help.text':'이렇게 말씀하실 수 있습니다 주인님: “3D 프로젝트 열어”, “정육면체 추가”, “더 크게”, “회전해”, “왼쪽으로 이동”, “집 만들어”, “이거 스캔”, “모델 내보내기”, “영어로 바꿔”, “조용히 해”, “모델 다시 불러” — 또는 그냥 편하게 대화하셔도 됩니다.',
   },
 };
 

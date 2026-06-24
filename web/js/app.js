@@ -11,7 +11,7 @@ import { Brain, estimateMaxTokens } from './llm.js';
 import { Voice, checkWakeSleep } from './voice.js';
 import { parse, looksCommandish, intentFromAI } from './intent.js';
 import { buildModel, genericModel } from './modeler.js';
-import { t, getLang, toggleLang, applyI18n, shapeName } from './i18n.js';
+import { t, getLang, setLang, toggleLang, applyI18n, shapeName } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -82,6 +82,27 @@ function toggleLanguage(){
   if (state.mode !== 'dormant' && !state.userMicMuted && voice.usesWebSpeech){
     voice.stopListening(); startListening();
   }
+}
+
+// ---- voice-callable versions of the button-only functions ----
+function setLanguageByVoice(lang){
+  if (getLang() === lang){ announce(t('ack.langAlready')); return; }
+  setLang(lang); applyI18n(); voice.stopSpeaking();
+  if (state.mode !== 'dormant' && !state.userMicMuted && voice.usesWebSpeech){ voice.stopListening(); startListening(); }
+  announce(t('ack.langSwitched'));      // already in the new language (setLang applied)
+}
+
+function setAiVoiceMuted(muted){
+  state.aiVoiceMuted = muted; voice.muted = muted;
+  el.micAI.classList.toggle('muted', muted);
+  if (muted) voice.stopSpeaking();
+  announce(t(muted ? 'ack.voiceMuted' : 'ack.voiceUnmuted'));   // muted → text only
+}
+
+function reloadModelByVoice(){
+  const wasDowngraded = brain.usingStub || /0\.5B/.test(brain.displayName || '');
+  retryModel();
+  announce(t(wasDowngraded ? 'ack.modelReloading' : 'ack.modelAlready'));
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
@@ -224,6 +245,11 @@ async function route(intent){
     case 'scene': return applyScene(intent);
     case 'build': return generateModel(intent.desc);
     case 'export': return exportModel();
+    case 'setLang': return setLanguageByVoice(intent.lang);
+    case 'muteVoice': return setAiVoiceMuted(true);
+    case 'unmuteVoice': return setAiVoiceMuted(false);
+    case 'retryModel': return reloadModelByVoice();
+    case 'help': return announce(t('help.text'));
     case 'chat': default: return generateReply(intent.text);
   }
 }

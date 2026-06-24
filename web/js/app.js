@@ -64,7 +64,7 @@ function retryModel(){
   // force the full-size model back on (matching iPad).
   const downgraded = brain.usingStub || /0\.5B/.test(brain.displayName || '');
   if (!downgraded) return;
-  try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); localStorage.removeItem('actig_llm_tier'); }catch{}
+  try{ localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts'); localStorage.removeItem('actig_llm_tier2'); }catch{}
   brain = new Brain();
   setStatus(t('st.retrying'));
   loadModel();

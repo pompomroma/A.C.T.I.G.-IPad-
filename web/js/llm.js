@@ -35,35 +35,33 @@ const THOROUGH = {
   ko: ' 복잡하거나 자세한 요청에는 신중히 생각하여 충실하고 잘 구성된 완전한 답변을 끝까지 제공하세요.',
 };
 
-// AUTO model selector. Keys the choice on **shader-f16 support** — a capability
-// shared by modern iPhone *and* iPad Apple GPUs — so the iPhone runs the SAME 1.5B
-// model as the iPad instead of being downgraded by memory heuristics that Safari
-// doesn't report (navigator.deviceMemory is undefined on iOS). `tier` lets the
-// crash-guard step down to the smaller model only if the larger one proves
-// unstable on a particular device.
-async function chooseModel(tier = 0){
+// Ordered list of model IDs to try, largest the device can handle first. Keying
+// on shader-f16 (a capability shared by modern iPhone & iPad Apple GPUs) lets the
+// iPhone attempt the SAME 1.5B model as the iPad; the 0.5B is always appended as a
+// guaranteed-loadable fallback so we end up with a WORKING model rather than lite.
+// `tier` (raised by the crash-guard) drops the 1.5B attempt on devices that proved
+// they can't run it.
+async function modelCandidates(tier = 0){
   let f16 = false, maxBuf = 0;
   try{
     const adapter = await navigator.gpu.requestAdapter();
     f16 = !!(adapter && adapter.features && adapter.features.has('shader-f16'));
     maxBuf = (adapter && adapter.limits && adapter.limits.maxStorageBufferBindingSize) || 0;
   }catch{}
-
   const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
-  // The 1.5B model runs on any f16-capable WebGPU device (A14+/M-series and
-  // desktops), or where memory/buffer limits clearly allow it. tier>0 forces the
-  // smaller, more memory-frugal model.
-  const big = tier === 0 && (f16 || mem >= 8 || maxBuf >= (1 << 30));
-  const size = big ? '1.5B' : '0.5B';
-  const quant = f16 ? 'q4f16_1' : 'q4f32_1';   // f16 = smaller + faster when supported
-  return `Qwen2.5-${size}-Instruct-${quant}-MLC`;
+  const capable = f16 || mem >= 8 || maxBuf >= (1 << 30);
+  const quant = f16 ? 'q4f16_1' : 'q4f32_1';
+  const big = `Qwen2.5-1.5B-Instruct-${quant}-MLC`;
+  const small = `Qwen2.5-0.5B-Instruct-${quant}-MLC`;
+  return (tier === 0 && capable) ? [big, small] : [small];
 }
 
 // Crash-loop breaker: if loading the model crashed the tab (Safari OOM) two times
 // in a row recently, skip it and run lite mode so the page stops reloading.
 const FAIL_KEY = 'actig_llm_fails';
 const FAIL_TS = 'actig_llm_fail_ts';
-const TIER_KEY = 'actig_llm_tier';   // 0 = 1.5B, 1 = 0.5B, 2 = lite (set by crash-guard)
+const TIER_KEY = 'actig_llm_tier2';  // 0 = 1.5B→0.5B, 1 = 0.5B, 2 = lite (set by crash-guard).
+                                     // Renamed so anyone stuck in old lite state starts fresh.
 
 // Evaluate a simple arithmetic request ("what is 12 times 7", "3 + 4 * 2").
 // Only ever runs after the string is reduced to digits/operators, so it is safe.
@@ -182,46 +180,56 @@ export class Brain {
       return;
     }
 
-    // Crash-loop guard: forget failures older than 30 min, then bail to lite mode
-    // after 2 recent crashes so the tab stops OOM-reloading.
+    // Crash-loop guard. A model that OOM-crashes the tab leaves a counter behind
+    // (the catch below never runs); on the next load we step DOWN one tier so the
+    // device recovers FAST (after a single crash) and settles on the largest model
+    // it can actually run. Lite mode is the last resort (tier 2).
     const now = Date.now();
     const lastTs = +(localStorage.getItem(FAIL_TS) || 0);
     let fails = +(localStorage.getItem(FAIL_KEY) || 0);
     let tier = +(localStorage.getItem(TIER_KEY) || 0);
     if (now - lastTs > 30 * 60 * 1000) fails = 0;
-    // Two crashes (tab reloads) at the current size → step DOWN one tier
-    // (1.5B → 0.5B → lite) rather than giving up, so the device stays stable while
-    // running the largest model it actually can. Tier is sticky (only the user's
-    // "retry full model" tap resets it).
-    if (fails >= 2){
+    if (fails >= 1){
       tier = Math.min(tier + 1, 2);
       fails = 0;
       try{ localStorage.setItem(TIER_KEY, String(tier)); localStorage.setItem(FAIL_KEY, '0'); }catch{}
     }
     if (tier >= 2){
-      this._useStub('lite mode (model too heavy for this device)');
+      this._useStub('lite mode (device cannot run an on-device model)');
       onProgress?.(1);
       return;
     }
-    // Mark the attempt *before* loading. If the tab crashes mid-load this value
-    // survives; a clean success or a caught error resets it below.
+    // Mark the attempt *before* loading so an uncatchable OOM crash is detected.
     try{ localStorage.setItem(FAIL_KEY, String(fails + 1)); localStorage.setItem(FAIL_TS, String(now)); }catch{}
 
-    const modelId = await chooseModel(tier);
-    try{
-      const webllm = await this._withTimeout(import('@mlc-ai/web-llm'), 30000, 'web-llm import timed out');
-      this.engine = await this._withTimeout(
-        webllm.CreateMLCEngine(modelId, { initProgressCallback: (r) => onProgress?.(r.progress ?? 0) }),
-        300000, 'model load timed out'
-      );
-      this.ready = true;
-      this.displayName = 'WebLLM · ' + modelId.replace(/-MLC$/, '');
-      try{ localStorage.setItem(FAIL_KEY, '0'); }catch{}   // success resets the counter
-    }catch(err){
-      console.warn('WebLLM load failed, using stub:', err);
-      try{ localStorage.setItem(FAIL_KEY, '0'); }catch{}   // graceful error (not a crash) — don't penalize
-      this._useStub(err?.message || 'model load failed');
+    let webllm;
+    try{ webllm = await this._withTimeout(import('@mlc-ai/web-llm'), 30000, 'web-llm import timed out'); }
+    catch(err){
+      try{ localStorage.setItem(FAIL_KEY, '0'); }catch{}     // import failure isn't a device crash
+      this._useStub('engine unavailable — ' + (err?.message || 'import failed'));
+      onProgress?.(1); return;
     }
+
+    // Try each candidate (largest first) IN-SESSION; a caught failure of the big
+    // model falls back to the small one without needing a reload.
+    const candidates = await modelCandidates(tier);
+    for (const modelId of candidates){
+      try{
+        this.engine = await this._withTimeout(
+          webllm.CreateMLCEngine(modelId, { initProgressCallback: (r) => onProgress?.(r.progress ?? 0) }),
+          300000, 'model load timed out'
+        );
+        this.ready = true; this.usingStub = false;
+        this.displayName = 'WebLLM · ' + modelId.replace(/-MLC$/, '');
+        try{ localStorage.setItem(FAIL_KEY, '0'); }catch{}   // success clears the crash counter
+        onProgress?.(1); return;
+      }catch(err){
+        console.warn('model load failed, trying next:', modelId, err?.message);
+      }
+    }
+    // Every candidate failed *gracefully* (caught) — not a crash, so don't penalize.
+    try{ localStorage.setItem(FAIL_KEY, '0'); }catch{}
+    this._useStub('all on-device models failed to load');
     onProgress?.(1);
   }
 

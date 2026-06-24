@@ -155,17 +155,22 @@ export function parse(raw, ctx = {}){
     return { type:'openScene' };
   if (has(t,'go back to chat','back to chat','back to conversation','close project','close the project','leave 3d','exit 3d','close 3d','leave the project','대화로','대화 모드','프로젝트 닫','3d 닫','채팅으로')) return { type:'openConversation' };
 
-  if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','control with my fingers','use my fingers','use my hand','hand control','finger control','카메라 제어 켜','손 제어 켜','손가락 제어','손으로 제어'))
+  if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','control with my fingers','use my fingers','use my hand','hand control','finger control','카메라 제어 켜','손 제어 켜','손가락 제어','손으로 제어')
+      || ((fuzzyWord(t,'enable','activate','turn','use','start','allow') || /\bturn on\b/.test(t)) && (has(t,'hand','finger','gesture') || has(t,'손','손가락','제스처'))))
     return { type:'enableCameraControl' };
-  if (has(t,'disable camera control','stop camera control','stop hand control','stop finger control','turn off hand','카메라 제어 꺼','손 제어 꺼'))
+  if (has(t,'disable camera control','stop camera control','stop hand control','stop finger control','turn off hand','카메라 제어 꺼','손 제어 꺼')
+      || ((fuzzyWord(t,'disable','stop','off','turn') || /\bturn off\b/.test(t)) && (has(t,'hand','finger','gesture') || has(t,'손','손가락','제스처'))))
     return { type:'disableCameraControl' };
   if (has(t,'open camera','camera mode','show camera','use the camera','turn on the camera','open the camera','camera view','카메라 열','카메라 모드','카메라 보여','카메라 켜')
-      || (fuzzyHas(t,'camera') && (fuzzyHas(t,'open','show','start','enable','activate') || has(t,'열','켜','보여'))))
+      || (fuzzyWord(t,'camera') && (fuzzyWord(t,'open','show','start','enable','activate','use','launch') || /\bturn on\b/.test(t) || has(t,'열','켜','보여'))))
     return { type:'openCamera' };
 
-  // --- Scan / analyse an object via the camera.
-  if (has(t,'what is this','what am i holding','what do you see','what is that','what object','what is in front','look through the camera','이거 뭐','이게 뭐','스캔','분석','인식','이게 뭐야','뭐야 이거','이게 뭔지','물체 인식','사물 인식','카메라로 봐','카메라로 분석')
-      || fuzzyHas(t,'scan','analyze','analyse','identify','recognize','recognise'))
+  // --- Scan / analyse an object via the camera. ("how/why do I scan…" is a
+  // process question, not a command, so don't fire on those.)
+  if (!/^(how|why|where|when)\b/.test(t) && (
+       has(t,'what is this','what am i holding','what do you see','what is that','what object','what is in front','look through the camera','이거 뭐','이게 뭐','스캔','분석','인식','이게 뭐야','뭐야 이거','이게 뭔지','물체 인식','사물 인식','카메라로 봐','카메라로 분석')
+       || fuzzyHas(t,'scan','analyze','analyse','identify','recognize','recognise')
+       || ((fuzzyWord(t,'examine','inspect','check') || /\blook at\b/.test(t)) && /\b(this|that|it|the object|the thing|object)\b/.test(t))))
     return { type:'analyze', question: raw };
 
   // "undo"/"redo" as explicit words are safe anywhere; the looser synonyms only
@@ -281,9 +286,9 @@ function parseScene(t, inScene){
 export function looksCommandish(raw, inScene){
   const t = norm(raw);
   if (inScene) return true;
-  return /\b(add|make|create|build|model|design|spawn|place|put|insert|drop|move|shift|slide|push|pull|drag|rotate|spin|turn|tilt|roll|flip|scale|grow|shrink|bigger|smaller|enlarge|reduce|expand|delete|remove|erase|clear|wipe|reset|swap|open|close|exit|enter|launch|scan|identify|recognize|analyze|analyse|export|download|save|undo|redo|enable|disable|quiet|mute|unmute|korean|english|reload|retry|restart)\b/.test(t)
-    || /\b(it|that|this|them|the (cube|box|sphere|ball|cylinder|cone|pyramid|torus|object|model|shape|thing))\b/.test(t)
-    || has(t,'추가','만들','생성','이동','옮겨','움직','회전','돌려','확대','축소','크게','작게','삭제','지워','없애','열어','닫','스캔','분석','인식','내보내','다운로드','모델링','지어','정렬','비워','초기화','한국어','영어','조용','음성','목소리');
+  return /\b(add|make|create|build|model|design|spawn|place|put|insert|drop|move|shift|slide|push|pull|drag|rotate|spin|turn|tilt|roll|flip|scale|grow|shrink|bigger|smaller|enlarge|reduce|expand|delete|remove|erase|clear|wipe|reset|swap|open|close|exit|enter|launch|start|begin|activate|fire|access|use|show|bring|pull up|turn on|turn off|scan|identify|recognize|analyze|analyse|export|download|save|load|undo|redo|enable|disable|quiet|mute|unmute|korean|english|reload|retry|restart)\b/.test(t)
+    || /\b(it|that|this|them|the (cube|box|sphere|ball|cylinder|cone|pyramid|torus|object|model|shape|thing|scene|camera|project|workspace))\b/.test(t)
+    || has(t,'추가','만들','생성','이동','옮겨','움직','회전','돌려','확대','축소','크게','작게','삭제','지워','없애','열어','열','켜','꺼','닫','스캔','분석','인식','내보내','다운로드','모델링','지어','정렬','비워','초기화','한국어','영어','조용','음성','목소리','카메라','활성','시작');
 }
 
 // Validate the LLM classifier's JSON into the app's intent shape. Returns a clean

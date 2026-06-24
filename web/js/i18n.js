@@ -63,6 +63,7 @@ const STR = {
     'ack.voiceMuted':'Voice muted, sir — I will reply in text.', 'ack.voiceUnmuted':'Voice on, sir.',
     'ack.modelReloading':'Reloading the full model, sir.', 'ack.modelAlready':'The full model is already running, sir.',
     'help.text':'You can say, sir: “open the 3D project”, “add a cube”, “make it bigger”, “rotate it”, “move it left”, “build a house”, “scan this”, “export the model”, “switch to Korean”, “be quiet”, “reload the model” — or just talk to me normally.',
+    'ack.webgpuOff':'I am in lite mode, sir — this browser has no WebGPU, which my full reasoning model needs. On iPhone, update to iOS 18 or later (WebGPU is on by default); on older iOS, enable it under Settings → Safari → Advanced → Feature Flags → WebGPU.',
   },
   ko: {
     'ui.title':'A.C.T.I.G.', 'ui.you':'사용자', 'ui.ai':'액티그',
@@ -105,6 +106,7 @@ const STR = {
     'ack.voiceMuted':'음성을 껐습니다 주인님 — 글로 답하겠습니다.', 'ack.voiceUnmuted':'음성을 켰습니다 주인님.',
     'ack.modelReloading':'전체 모델을 다시 불러옵니다 주인님.', 'ack.modelAlready':'이미 전체 모델이 실행 중입니다 주인님.',
     'help.text':'이렇게 말씀하실 수 있습니다 주인님: “3D 프로젝트 열어”, “정육면체 추가”, “더 크게”, “회전해”, “왼쪽으로 이동”, “집 만들어”, “이거 스캔”, “모델 내보내기”, “영어로 바꿔”, “조용히 해”, “모델 다시 불러” — 또는 그냥 편하게 대화하셔도 됩니다.',
+    'ack.webgpuOff':'라이트 모드입니다 주인님 — 이 브라우저에 전체 추론 모델에 필요한 WebGPU가 없습니다. 아이폰은 iOS 18 이상으로 업데이트하면 (기본 활성화) 되고, 구버전 iOS는 설정 → Safari → 고급 → 기능 플래그 → WebGPU 에서 켜실 수 있습니다.',
   },
 };
 

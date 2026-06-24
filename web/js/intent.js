@@ -60,6 +60,21 @@ function fuzzyHas(t, ...keywords){
   return false;
 }
 
+// Like fuzzyHas but matches whole TOKENS only (never substrings) — for verbs such
+// as "model" that must NOT fire inside unrelated words ("modeling", "3d model").
+function fuzzyWord(t, ...words){
+  const tokens = t.split(' ');
+  for (const kw of words){
+    if (!/^[a-z]+$/.test(kw)){ if (t.includes(kw)) return true; continue; }
+    const thr = kw.length >= 7 ? 2 : (kw.length >= 4 ? 1 : 0);
+    for (const tok of tokens){
+      if (tok === kw) return true;
+      if (thr && tok.length >= 3 && Math.abs(tok.length - kw.length) <= thr && levenshtein(tok, kw) <= thr) return true;
+    }
+  }
+  return false;
+}
+
 function detectShape(t){
   for (const [k,v] of Object.entries(SHAPE_WORDS)) if (t.includes(k)) return v;
   // Fuzzy pass for English shape words only (cube/box/sphere/ball/cylinder/cone…).
@@ -104,19 +119,29 @@ export function parse(raw, ctx = {}){
   if (has(t,'wake up actig','wake up act','wakeup actig','액티그 일어나','액티그 깨어나','일어나 액티그','깨어나')) return { type:'wake' };
   if (has(t,'shut down all systems','shutdown all systems','시스템 종료','모든 시스템 종료','전부 꺼','다 꺼')) return { type:'shutdown' };
 
-  if (has(t,'3d project','3d space','3d mode','3d view','modelling space','modeling space','workspace','bring up the project','open the project','3d 공간','모델링','프로젝트 열','3d 열','작업 공간','3d 모드')
-      || fuzzyHas(t,'modeling','modelling','workspace')
-      || ((fuzzyHas(t,'open','bring','enter','start','launch','show') || /\b(let'?s|wanna|want to)\b/.test(t)) && /\b3\s?d\b|3차원/.test(t)))
+  // --- Open the 3D project (very flexible: explicit phrases, OR a 3D/“modeling”
+  // signal combined with an open verb). The verb requirement on the looser signals
+  // keeps ordinary talk ("I enjoy modeling", "what's a 3d model") out of it.
+  // Word-boundary regex so "3d mode" doesn't fire on "3d model", etc.
+  const open3dRe = /\b3\s?d (project|space|mode|view|editor|workspace)\b|\bmodel(?:l?ing)? space\b|\bthe modeler\b|\b(?:open|bring up|pull up) the project\b/;
+  const open3dKo = ['3d 공간','3d 모드','3d 열','3d 켜','3d 시작','프로젝트 열','작업 공간','작업실','모델링 시작','모델링 켜','모델링 공간'];
+  const wants3D = /\b3\s?d\b|3차원|three\s?d/.test(t) || has(t,'모델링');
+  const openVerb = fuzzyWord(t,'open','bring','enter','start','launch','show','activate','access','load','display','pull','begin')
+    || has(t,'열','켜','시작','띄워','보여','활성','들어가') || /\b(go to|take me to|head to|bring up|pull up)\b/.test(t);
+  if (open3dRe.test(t) || has(t, ...open3dKo) || (wants3D && openVerb) || (fuzzyWord(t,'modeling','modelling','modeler') && openVerb))
     return { type:'openScene' };
-  if (has(t,'go back to chat','back to chat','close project','close the project','leave 3d','exit 3d','대화로','프로젝트 닫','3d 닫','채팅으로')) return { type:'openConversation' };
+  if (has(t,'go back to chat','back to chat','back to conversation','close project','close the project','leave 3d','exit 3d','close 3d','leave the project','대화로','대화 모드','프로젝트 닫','3d 닫','채팅으로')) return { type:'openConversation' };
 
   if (has(t,'enable camera control','enable finger control','enable hand control','control with my hand','control with my fingers','use my fingers','use my hand','hand control','finger control','카메라 제어 켜','손 제어 켜','손가락 제어','손으로 제어'))
     return { type:'enableCameraControl' };
   if (has(t,'disable camera control','stop camera control','stop hand control','stop finger control','turn off hand','카메라 제어 꺼','손 제어 꺼'))
     return { type:'disableCameraControl' };
-  if (has(t,'open camera','camera mode','show camera','use the camera','카메라 열','카메라 모드','카메라 보여')) return { type:'openCamera' };
+  if (has(t,'open camera','camera mode','show camera','use the camera','turn on the camera','open the camera','camera view','카메라 열','카메라 모드','카메라 보여','카메라 켜')
+      || (fuzzyHas(t,'camera') && (fuzzyHas(t,'open','show','start','enable','activate') || has(t,'열','켜','보여'))))
+    return { type:'openCamera' };
 
-  if (has(t,'what is this','what am i holding','what do you see','what is that','이거 뭐','이게 뭐','스캔','분석','인식','이게 뭐야','뭐야 이거')
+  // --- Scan / analyse an object via the camera.
+  if (has(t,'what is this','what am i holding','what do you see','what is that','what object','what is in front','look through the camera','이거 뭐','이게 뭐','스캔','분석','인식','이게 뭐야','뭐야 이거','이게 뭔지','물체 인식','사물 인식','카메라로 봐','카메라로 분석')
       || fuzzyHas(t,'scan','analyze','analyse','identify','recognize','recognise'))
     return { type:'analyze', question: raw };
 
@@ -148,13 +173,20 @@ const TRANSFORM_WORDS = ['bigger','smaller','grow','shrink','rotate','spin','til
 // Detect a "build a <described object>" request (vs. adding a primitive shape or
 // transforming the selection). Returns { type:'build', desc } or null.
 function parseBuild(t, raw){
-  const strong = fuzzyHas(t,'build','model','design','construct','sculpt','assemble') || has(t,'지어','설계','모델링','조립');
-  const make = fuzzyHas(t,'make','create','generate','build') || has(t,'만들','그려');
+  // Questions/statements about something are conversation, not build commands
+  // ("what is a 3d model", "tell me about modeling"). Genuine command-questions
+  // ("could you build a house") lose their prefix in norm() already.
+  if (/^(what|who|whose|why|how|when|where|which|is|are|am|do|does|did|tell|explain|describe)\b/.test(t)) return null;
+  if (/\b(is|are|was|were)\b/.test(t)) return null;          // a statement, not a command
+  // Token-level matching so "model" doesn't fire inside "modeling"/"3d model".
+  const strong = fuzzyWord(t,'build','model','design','construct','sculpt','assemble') || has(t,'지어','설계','모델링','조립');
+  const make = fuzzyWord(t,'make','create','generate','build') || has(t,'만들','그려');
   if (!strong && !make) return null;
   if (detectShape(t)) return null;                          // "make a cube" → add primitive
   if (TRANSFORM_WORDS.some(w => t.includes(w))) return null; // "make it bigger" → grow, etc.
   const desc = cleanBuildTarget(raw);
-  if (!desc) return null;
+  // Reject empty / too-thin targets ("3d", a lone number) so they fall through.
+  if (!desc || desc.length < 2 || /^3\s?d?$/.test(desc) || /^\d+$/.test(desc)) return null;
   return { type:'build', desc };
 }
 

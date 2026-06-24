@@ -140,19 +140,19 @@ function stubReply(t, lang){
   return `Noted, sir — “${t.length > 60 ? t.slice(0, 60) + '…' : t}”. I am in lite mode here so my free conversation is limited, but commands like “bring up the 3D project”, “add a cube”, “scan this” and the camera controls all work, and I can handle the time, date and quick maths.`;
 }
 
-// Estimate a generation token budget from the user's request so simple chat
-// stays snappy while genuinely complex asks get room to answer fully. Short
-// greetings/commands get a small cap (fast first reply + quick TTS); long or
-// reasoning-heavy prompts get a large one.
+// Estimate a generation token budget from the user's request so simple chat stays
+// snappy while genuinely complex asks get plenty of room. Adaptive — short inputs
+// get a small first-chunk budget; long/reasoning-heavy ones get a large one. The
+// auto-continuation in reply() can extend further up to a high hard cap.
 export function estimateMaxTokens(text){
   const t = (text || '').toLowerCase();
   const words = t.trim().split(/\s+/).filter(Boolean).length;
   const complex = /\b(explain|detail|elaborate|why|how (do|does|to|can)|step by step|in depth|compare|difference|list|write|code|program|essay|story|plan|describe|analy|summar|reasons?|pros and cons)\b/.test(t)
     || /(설명|자세히|왜|어떻게|비교|차이|목록|작성|코드|이야기|계획|단계)/.test(t);
-  if (complex || words >= 40) return 1024;
-  if (words >= 16) return 640;
+  if (complex || words >= 40) return 1280;
+  if (words >= 16) return 768;
   if (words <= 6) return 192;
-  return 384;
+  return 448;
 }
 
 export class Brain {
@@ -254,9 +254,9 @@ export class Brain {
     const convo = [{ role:'system', content: sys },
                    ...messages.map((m) => ({ role: m.role, content: m.content }))];
 
-    const HARD_CAP = 1800;          // total generated tokens (approx) ceiling
-    const MAX_ROUNDS = 3;
-    let used = 0, round = 0, budget = opts.maxTokens || 384;
+    const HARD_CAP = 3072;          // total generated tokens (approx) ceiling — high
+    const MAX_ROUNDS = 5;           // so complex / many-parameter tasks can run long
+    let used = 0, round = 0, budget = opts.maxTokens || 448;
 
     while (round < MAX_ROUNDS && used < HARD_CAP){
       let finish = null, acc = '';
@@ -281,7 +281,7 @@ export class Brain {
       if (finish !== 'length' || !acc.trim()) break; // natural stop or empty → done
       // Truncated: continue from what was said so far.
       convo.push({ role:'assistant', content: acc });
-      budget = 512;
+      budget = 768;
     }
   }
 

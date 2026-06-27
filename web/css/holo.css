@@ -17,7 +17,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;
 
 .backdrop{position:fixed;inset:0;z-index:0;
   background:radial-gradient(circle at 50% 45%, rgba(82,188,255,.18), transparent 60%), #000;}
-.workspace{position:fixed;inset:0;width:100%;height:100%}
+.workspace{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh}
 .camera-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
 /* Playing but hidden — used so MediaPipe can read frames during hand control. */
 .camera-video.detecting{width:2px;height:2px;opacity:.01;object-fit:cover}
@@ -30,17 +30,20 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;
   background:var(--holo-accent);color:#001;border:none;border-radius:999px;
   padding:12px 22px;font-weight:700;font-size:16px}
 
-/* Toolbar */
+/* Toolbar — pinned to the TOP (clear of the bottom hologram panel that would
+   otherwise cover it), inside the device safe area, and WRAPS so every button
+   stays visible on any screen size. z-index above the overlay just in case. */
 .scene-toolbar{position:fixed;left:50%;transform:translateX(-50%);
-  bottom:calc(150px + var(--safe-bottom));display:flex;gap:10px;max-width:96vw;overflow-x:auto;
-  padding:10px 14px;border-radius:18px;background:rgba(13,42,77,.35);
+  top:calc(var(--safe-top) + 8px);
+  display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:7px;
+  width:max-content;max-width:calc(100vw - 12px);
+  padding:8px 12px;border-radius:18px;background:rgba(13,42,77,.5);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border:1px solid rgba(82,188,255,.6);box-shadow:0 0 18px rgba(82,188,255,.4);
-  scrollbar-width:none;z-index:20}
-.scene-toolbar::-webkit-scrollbar{display:none}
+  z-index:50}
 .scene-toolbar button{white-space:nowrap;background:rgba(13,42,77,.5);color:var(--holo-accent);
-  border:1px solid rgba(82,188,255,.4);border-radius:12px;padding:8px 10px;font-size:13px}
-.scene-toolbar .sep{width:1px;background:rgba(82,188,255,.4);margin:2px 2px}
+  border:1px solid rgba(82,188,255,.4);border-radius:12px;padding:7px 10px;font-size:13px}
+.scene-toolbar .sep{display:none}   /* separators don't help once buttons wrap */
 
 /* Overlay container */
 .overlay{position:fixed;right:0;bottom:0;z-index:40;

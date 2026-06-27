@@ -71,7 +71,12 @@ export class Scene3D {
 
     this.raycaster = new THREE.Raycaster();
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    // Re-fit to the device frame on every kind of viewport change (orientation,
+    // iOS chrome show/hide, split-view) so the 3D view always fills the screen.
+    const onResize = () => this.resize();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
   }
 
   resize(){

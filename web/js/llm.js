@@ -58,7 +58,10 @@ async function modelCandidates(tier = 0){
   // can't finish there (the tab gets discarded mid-download). iPad reports as
   // desktop Safari (no 'iPhone' in UA) and still gets the larger model.
   const isPhone = typeof navigator !== 'undefined' && /iPhone|iPod/.test(navigator.userAgent || '');
-  if (isPhone) return [small];
+  // The user can force the larger model on iPhone ("use the large model"); the
+  // in-session cascade + crash-guard still fall back automatically if it can't load.
+  let forceLarge = false; try{ forceLarge = localStorage.getItem('actig_llm_force_large') === '1'; }catch{}
+  if (isPhone && !forceLarge) return [small];
   return (tier === 0 && capable) ? [big, small] : [small];
 }
 
@@ -305,7 +308,7 @@ export class Brain {
       'You map a user command for a 3D modelling assistant to ONE JSON object and nothing else. ' +
       'Allowed "type": chat, wake, shutdown, openScene, openConversation, openCamera, ' +
       'enableCameraControl, disableCameraControl, analyze, undo, redo, export, build, scene, ' +
-      'setLang (with "lang":"ko" or "en"), muteVoice, unmuteVoice, retryModel, help. ' +
+      'setLang (with "lang":"ko" or "en"), muteVoice, unmuteVoice, retryModel, useLargeModel, help. ' +
       'For 3D edits use {"type":"scene","action":...}; action one of add, multiply, grow, shrink, ' +
       'rotate, move, moveTo, delete, swap, clear. add/multiply need "kind" (box, sphere, cylinder, ' +
       'cone, pyramid, torus, plane) and multiply a "count". rotate has "axis"(x|y|z) and "degrees". ' +

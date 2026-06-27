@@ -138,6 +138,11 @@ export function parse(raw, ctx = {}){
       || (fuzzyWord(t,'reload','retry','restart') && fuzzyWord(t,'model')))
     return { type:'retryModel' };
 
+  // Force-attempt the larger (1.5B) model (iPhone override; auto-falls back).
+  if (has(t,'use the large model','use the larger model','use the big model','use the bigger model','try the large model','try the big model','use the full size model','load the large model','run the large model','큰 모델','대형 모델','큰 모델 써','큰 모델로','큰 모델 사용')
+      || (fuzzyWord(t,'use','try','switch','load','run','want','give') && fuzzyWord(t,'large','larger','big','bigger') && fuzzyWord(t,'model')))
+    return { type:'useLargeModel' };
+
   // "What can I say?" — list the voice commands.
   if (has(t,'what can i say','list commands','show commands','what commands','voice commands','help me use','도움말','명령어','음성 명령','무슨 명령','뭐라고 말'))
     return { type:'help' };
@@ -295,7 +300,7 @@ export function looksCommandish(raw, inScene){
 // intent or null (so the caller falls back to plain chat).
 const AI_TYPES = new Set(['wake','shutdown','openScene','openConversation','openCamera',
   'enableCameraControl','disableCameraControl','analyze','undo','redo','export','build','scene',
-  'setLang','muteVoice','unmuteVoice','retryModel','help']);
+  'setLang','muteVoice','unmuteVoice','retryModel','useLargeModel','help']);
 const SCENE_ACTIONS = new Set(['add','multiply','grow','shrink','rotate','move','moveTo','delete','swap','clear']);
 const KINDS = new Set(['box','sphere','cylinder','cone','pyramid','torus','plane']);
 

@@ -107,9 +107,22 @@ function setAiVoiceMuted(muted){
 }
 
 function reloadModelByVoice(){
-  const wasDowngraded = brain.usingStub || /0\.5B/.test(brain.displayName || '');
-  retryModel();
-  announce(t(wasDowngraded ? 'ack.modelReloading' : 'ack.modelAlready'));
+  // Reload the best model the device can run (clears any "force large" override).
+  try{ localStorage.removeItem('actig_llm_force_large');
+       localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts');
+       localStorage.removeItem('actig_llm_tier2'); }catch{}
+  brain = new Brain(); setStatus(t('st.retrying')); loadModel();
+  announce(t('ack.modelReloading'));
+}
+
+// Force-attempt the larger 1.5B model (e.g. on a high-end iPhone). The in-session
+// cascade + crash-guard fall back to the smaller model automatically if it can't load.
+function useLargeModelByVoice(){
+  try{ localStorage.setItem('actig_llm_force_large', '1');
+       localStorage.removeItem('actig_llm_fails'); localStorage.removeItem('actig_llm_fail_ts');
+       localStorage.removeItem('actig_llm_tier2'); }catch{}
+  brain = new Brain(); setStatus(t('st.retrying')); loadModel();
+  announce(t('ack.largeModelTrying'));
 }
 
 // Launch via a URL like .../#scene (or ?ws=scene) opens that workspace on start —
@@ -256,6 +269,7 @@ async function route(intent){
     case 'muteVoice': return setAiVoiceMuted(true);
     case 'unmuteVoice': return setAiVoiceMuted(false);
     case 'retryModel': return reloadModelByVoice();
+    case 'useLargeModel': return useLargeModelByVoice();
     case 'help': return announce(t('help.text'));
     case 'chat': default: return generateReply(intent.text);
   }
